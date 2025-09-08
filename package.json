@@ -1,0 +1,167 @@
+{
+  "name": "react-jest-test-generator",
+  "displayName": "React Jest Test Generator",
+  "description": "Generate Jest test cases for React components with Enzyme support. Automatically generates cheerio mocks and setupTests.js for React 16 projects.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "watch": "tsc --watch",
+    "compile": "tsc -p .",
+    "pretest": "npm run compile"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "reactJestGen.generateTest",
+        "title": "Generate Test for File"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "reactJestGen.generateTest",
+          "when": "resourceExtname =~ /\\.(js|jsx|ts|tsx)$/"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "reactJestGen.generateTest",
+          "when": "resourceExtname =~ /\\.(js|jsx|ts|tsx)$/",
+          "group": "7_modification"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "reactJestGen.generateTest",
+          "when": "resourceExtname =~ /\\.(js|jsx|ts|tsx)$/",
+          "group": "7_modification"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "React Jest Test Generator",
+      "properties": {
+        "reactJestGen.framework": {
+          "type": "string",
+          "enum": [
+            "jest",
+            "vitest"
+          ],
+          "default": "jest",
+          "description": "Test framework to use for generated tests"
+        },
+        "reactJestGen.testingLibrary": {
+          "type": "string",
+          "enum": [
+            "rtl",
+            "enzyme"
+          ],
+          "default": "enzyme",
+          "description": "Testing library to use for React component tests"
+        },
+        "reactJestGen.testPathPattern": {
+          "type": "string",
+          "default": "${componentDir}/${componentName}.test.${testExt}",
+          "description": "Pattern for test file paths with token replacement"
+        },
+        "reactJestGen.combineTests": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to combine all tests for a file into a single test file (recommended for files with multiple components/functions)"
+        },
+        "reactJestGen.include": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "src/**/*.{js,jsx,ts,tsx}"
+          ],
+          "description": "Glob patterns for files to include in scanning"
+        },
+        "reactJestGen.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/.next/**"
+          ],
+          "description": "Glob patterns for files to exclude from scanning"
+        }
+      }
+    }
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "setupFilesAfterEnv": ["<rootDir>/src/setupTests.js"],
+    "transform": {
+      "^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!enzyme-adapter-react-16)"
+    ],
+    "moduleNameMapper": {
+      "\\.(css|less|scss|sass)$": "identity-obj-proxy",
+      "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
+      "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js"
+    },
+    "testMatch": [
+      "<rootDir>/src/**/__tests__/**/*.(js|jsx|ts|tsx)",
+      "<rootDir>/src/**/*.(test|spec).(js|jsx|ts|tsx)",
+      "<rootDir>/example/**/*.(test|spec).(js|jsx|ts|tsx)"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.{js,jsx,ts,tsx}",
+      "!src/**/*.d.ts"
+    ]
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.28.3",
+    "@babel/preset-react": "^7.27.1",
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^12.1.5",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/babel__traverse": "^7.28.0",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.70.0",
+    "@typescript-eslint/eslint-plugin": "^5.42.0",
+    "@typescript-eslint/parser": "^5.42.0",
+    "babel-jest": "^30.1.2",
+    "enzyme": "^3.11.0",
+    "enzyme-adapter-react-16": "^1.15.8",
+    "eslint": "^8.28.0",
+    "glob": "^8.1.0",
+    "jest-environment-jsdom": "^30.1.2",
+    "mocha": "^10.1.0",
+    "node-fetch": "^3.3.2",
+    "typescript": "^4.9.3"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.20.0",
+    "@babel/traverse": "^7.20.0",
+    "@babel/types": "^7.20.0",
+    "@material-ui/core": "^4.12.4",
+    "@material-ui/icons": "^4.11.3",
+    "@material-ui/lab": "^4.0.0-alpha.61",
+    "@types/react": "^16.14.66",
+    "@types/react-dom": "^16.9.25",
+    "fast-glob": "^3.2.12",
+    "identity-obj-proxy": "^3.0.0",
+    "react": "^16.14.0",
+    "react-dom": "^16.14.0"
+  }
+}

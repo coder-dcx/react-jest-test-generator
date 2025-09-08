@@ -1,0 +1,11 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`Collapsible should render correctly with shallow 1`] = `ShallowWrapper {}`;
+
+exports[`ConditionOperand should render correctly with shallow 1`] = `ShallowWrapper {}`;
+
+exports[`EnhancedCellValueAutocomplete should render correctly with shallow 1`] = `ShallowWrapper {}`;
+
+exports[`FormulaBuilder should render correctly with shallow 1`] = `ShallowWrapper {}`;
+
+exports[`FormulaNode should render correctly with shallow 1`] = `ShallowWrapper {}`;

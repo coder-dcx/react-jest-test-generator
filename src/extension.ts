@@ -1,0 +1,902 @@
+import * as vscode from 'vscode';
+import { ComponentAnalyzer, ComponentInfo, AnalysisResult } from './componentAnalyzer';
+
+export function activate(context: vscode.ExtensionContext) {
+  console.log('🔥 React Jest Test Generator extension is ACTIVATING...');
+
+  // Register the main command
+  const generateTestCommand = vscode.commands.registerCommand('reactJestGen.generateTest', async (uri?: vscode.Uri) => {
+    console.log('🎯 Generate test command triggered!', { uri: uri?.fsPath });
+
+    try {
+      // Get the file URI - either from the command argument or active editor
+      const fileUri = uri || vscode.window.activeTextEditor?.document.uri;
+
+      if (!fileUri) {
+        vscode.window.showErrorMessage('No file selected. Please open a React component file or select one in the explorer.');
+        return;
+      }
+
+      // Check if it's a supported file type
+      const fileName = fileUri.fsPath;
+      const supportedExtensions = ['.js', '.jsx', '.ts', '.tsx'];
+
+      if (!supportedExtensions.some(ext => fileName.endsWith(ext))) {
+        vscode.window.showErrorMessage('Selected file is not a supported React component file (.js, .jsx, .ts, .tsx)');
+        return;
+      }
+
+      // Show progress
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Generating tests...',
+        cancellable: false
+      }, async (progress: vscode.Progress<{ message?: string; increment?: number }>) => {
+        progress.report({ increment: 0, message: 'Analyzing components and functions...' });
+
+        // Analyze component and get analysis result
+        const analysisResult = await ComponentAnalyzer.analyzeFile(fileUri);
+
+        if (!analysisResult || (analysisResult.components.length === 0 && analysisResult.functions.length === 0)) {
+          throw new Error('No components or functions found in the selected file');
+        }
+
+        progress.report({ increment: 30, message: 'Generating test content...' });
+
+        // Check if we need to generate Enzyme setup files
+        const config = vscode.workspace.getConfiguration('reactJestGen');
+        const testingLibrary = config.get<string>('testingLibrary', 'rtl');
+        
+        if (testingLibrary === 'enzyme') {
+          await ensureEnzymeSetup(fileUri);
+        }
+
+        // Generate test content for all components and functions
+        const testResults = await generateTestContentForAll(analysisResult);
+
+        progress.report({ increment: 70, message: 'Creating test files...' });
+
+        // Create test files
+        const createdFiles = await createTestFiles(testResults, fileUri);
+
+        progress.report({ increment: 100, message: 'Tests generated successfully!' });
+
+        // Show success message
+        const totalItems = analysisResult.components.length + analysisResult.functions.length;
+        const message = `Generated tests for ${totalItems} item${totalItems > 1 ? 's' : ''}: ${analysisResult.components.length} component${analysisResult.components.length !== 1 ? 's' : ''}, ${analysisResult.functions.length} function${analysisResult.functions.length !== 1 ? 's' : ''}`;
+
+        const openFiles = 'Open Test Files';
+        const result = await vscode.window.showInformationMessage(message, openFiles);
+
+        if (result === openFiles && createdFiles.length > 0 && createdFiles[0]) {
+          // Open the first test file
+          vscode.workspace.openTextDocument(createdFiles[0]).then((doc: vscode.TextDocument) => {
+            vscode.window.showTextDocument(doc);
+          });
+        }
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      vscode.window.showErrorMessage(`Failed to generate tests: ${errorMessage}`);
+      console.error('Test generation error:', error);
+    }
+  });
+
+  context.subscriptions.push(generateTestCommand);
+}
+
+export function deactivate() {
+  console.log('React Jest Test Generator extension deactivated');
+}
+
+// Ensure Enzyme setup files exist in the project (only generates cheerio.js mock)
+async function ensureEnzymeSetup(sourceUri: vscode.Uri): Promise<void> {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(sourceUri);
+  if (!workspaceFolder) {
+    return;
+  }
+
+  const projectRoot = workspaceFolder.uri.fsPath;
+
+  // Check if __mocks__ directory exists, create if not
+  const mocksDir = vscode.Uri.file(`${projectRoot}/__mocks__`);
+  try {
+    await vscode.workspace.fs.stat(mocksDir);
+  } catch {
+    // Directory doesn't exist, create it
+    await vscode.workspace.fs.createDirectory(mocksDir);
+  }
+
+  // Check if cheerio.js mock exists
+  const cheerioMockPath = vscode.Uri.file(`${projectRoot}/__mocks__/cheerio.js`);
+  try {
+    await vscode.workspace.fs.stat(cheerioMockPath);
+    // File exists, no need to create
+  } catch {
+    // File doesn't exist, create the cheerio mock
+    const cheerioMockContent = `// Comprehensive mock for cheerio to avoid Web API issues in Enzyme tests
+const createCheerioElement = () => ({
+  html: jest.fn(() => ''),
+  text: jest.fn(() => ''),
+  find: jest.fn(() => createCheerioCollection()),
+  attr: jest.fn(() => ''),
+  children: jest.fn(() => createCheerioCollection()),
+  parent: jest.fn(() => createCheerioElement()),
+  next: jest.fn(() => createCheerioElement()),
+  prev: jest.fn(() => createCheerioElement()),
+  siblings: jest.fn(() => createCheerioCollection()),
+  contents: jest.fn(() => createCheerioCollection()),
+  each: jest.fn(() => createCheerioCollection()),
+  map: jest.fn(() => createCheerioCollection()),
+  filter: jest.fn(() => createCheerioCollection()),
+  first: jest.fn(() => createCheerioElement()),
+  last: jest.fn(() => createCheerioElement()),
+  eq: jest.fn(() => createCheerioElement()),
+  slice: jest.fn(() => createCheerioCollection()),
+  hasClass: jest.fn(() => false),
+  addClass: jest.fn(() => createCheerioElement()),
+  removeClass: jest.fn(() => createCheerioElement()),
+  toggleClass: jest.fn(() => createCheerioElement()),
+  val: jest.fn(() => ''),
+  is: jest.fn(() => false),
+  prop: jest.fn(() => null),
+  removeAttr: jest.fn(() => createCheerioElement()),
+  data: jest.fn(() => null),
+  removeData: jest.fn(() => createCheerioElement()),
+  clone: jest.fn(() => createCheerioElement()),
+  empty: jest.fn(() => createCheerioElement()),
+  remove: jest.fn(() => createCheerioElement()),
+  replaceWith: jest.fn(() => createCheerioElement()),
+  wrap: jest.fn(() => createCheerioElement()),
+  unwrap: jest.fn(() => createCheerioElement()),
+  wrapAll: jest.fn(() => createCheerioElement()),
+  wrapInner: jest.fn(() => createCheerioElement()),
+  append: jest.fn(() => createCheerioElement()),
+  prepend: jest.fn(() => createCheerioElement()),
+  after: jest.fn(() => createCheerioElement()),
+  before: jest.fn(() => createCheerioElement()),
+  insertAfter: jest.fn(() => createCheerioElement()),
+  insertBefore: jest.fn(() => createCheerioElement()),
+  replaceAll: jest.fn(() => createCheerioElement()),
+  detach: jest.fn(() => createCheerioElement()),
+  toArray: jest.fn(() => []),
+  get: jest.fn(() => null),
+  index: jest.fn(() => -1),
+  length: 0,
+  [Symbol.iterator]: function* () { yield createCheerioElement(); }
+});
+
+const createCheerioCollection = () => ({
+  ...createCheerioElement(),
+  length: 0,
+  [Symbol.iterator]: function* () { yield createCheerioElement(); }
+});
+
+const cheerioMock = {
+  load: jest.fn((html) => createCheerioElement()),
+  html: jest.fn(() => ''),
+  text: jest.fn(() => ''),
+  parseHTML: jest.fn(() => [createCheerioElement()]),
+  contains: jest.fn(() => false),
+  merge: jest.fn(() => createCheerioCollection()),
+  fn: {},
+  prototype: createCheerioElement()
+};
+
+module.exports = cheerioMock;`;
+
+    await vscode.workspace.fs.writeFile(cheerioMockPath, Buffer.from(cheerioMockContent, 'utf8'));
+    console.log('Generated cheerio mock at:', cheerioMockPath.fsPath);
+  }
+
+  // Check if Jest setup file exists for Enzyme configuration
+  const setupFiles = [
+    'src/setupTests.js',
+    'src/test-setup.js',
+    'test-setup.js',
+    'setupTests.js'
+  ];
+
+  let setupFileFound = false;
+  for (const setupFile of setupFiles) {
+    const setupUri = vscode.Uri.file(`${projectRoot}/${setupFile}`);
+    try {
+      await vscode.workspace.fs.stat(setupUri);
+      setupFileFound = true;
+      break;
+    } catch {
+      // Continue checking other files
+    }
+  }
+
+  if (!setupFileFound) {
+    // Create a comprehensive Enzyme setup file
+    const setupContent = `// Comprehensive Jest setup file for React 16 with Enzyme support
+import { configure } from 'enzyme';
+import Adapter from 'enzyme-adapter-react-16';
+
+// Configure Enzyme adapter for React 16
+configure({ adapter: new Adapter() });
+
+// TextEncoder/TextDecoder polyfills for Node.js
+if (typeof global.TextEncoder === 'undefined') {
+  try {
+    const { TextEncoder, TextDecoder } = require('util');
+    global.TextEncoder = TextEncoder;
+    global.TextDecoder = TextDecoder;
+  } catch (error) {
+    // Fallback polyfill if util is not available
+    global.TextEncoder = class TextEncoder {
+      encode(input = '') {
+        const arr = new Uint8Array(input.length);
+        for (let i = 0; i < input.length; i++) {
+          arr[i] = input.charCodeAt(i);
+        }
+        return arr;
+      }
+    };
+    global.TextDecoder = class TextDecoder {
+      decode(arr) {
+        return String.fromCharCode(...arr);
+      }
+    };
+  }
+}
+
+// Web API polyfills
+if (typeof global.ReadableStream === 'undefined') {
+  global.ReadableStream = class ReadableStream {};
+}
+
+if (typeof global.WritableStream === 'undefined') {
+  global.WritableStream = class WritableStream {};
+}
+
+if (typeof global.TransformStream === 'undefined') {
+  global.TransformStream = class TransformStream {};
+}
+
+// Mock window.matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+});
+
+// Mock IntersectionObserver
+global.IntersectionObserver = class IntersectionObserver {
+  constructor() {}
+  observe() { return null; }
+  disconnect() { return null; }
+  unobserve() { return null; }
+};
+
+// Mock ResizeObserver
+global.ResizeObserver = class ResizeObserver {
+  constructor() {}
+  observe() { return null; }
+  disconnect() { return null; }
+  unobserve() { return null; }
+};
+
+// Mock requestAnimationFrame and cancelAnimationFrame
+global.requestAnimationFrame = function(callback) {
+  return setTimeout(callback, 0);
+};
+global.cancelAnimationFrame = function(id) {
+  clearTimeout(id);
+};
+
+// Mock window.getComputedStyle
+Object.defineProperty(window, 'getComputedStyle', {
+  value: jest.fn(() => ({
+    getPropertyValue: jest.fn(() => ''),
+    setProperty: jest.fn(),
+    removeProperty: jest.fn(),
+  })),
+});
+
+// Mock document.elementFromPoint
+document.elementFromPoint = jest.fn(() => null);
+
+// Mock window.scrollTo
+window.scrollTo = jest.fn();
+
+// Mock window.scroll
+Object.defineProperty(window, 'scroll', {
+  writable: true,
+  value: jest.fn(),
+});
+
+// Mock navigator.clipboard
+Object.defineProperty(navigator, 'clipboard', {
+  value: {
+    writeText: jest.fn(() => Promise.resolve()),
+    readText: jest.fn(() => Promise.resolve('')),
+  },
+});
+
+// Mock Material-UI theme and styles (using @mui/material for modern React)
+jest.mock('@mui/material/styles', () => ({
+  ...jest.requireActual('@mui/material/styles'),
+  createTheme: jest.fn(() => ({
+    palette: { primary: { main: '#000' }, secondary: { main: '#000' } },
+    breakpoints: { up: jest.fn(() => '@media (min-width:0px)') }
+  })),
+  ThemeProvider: ({ children }) => children,
+  styled: jest.fn(() => jest.fn(() => null)),
+}));
+
+jest.mock('@mui/material', () => ({
+  ...jest.requireActual('@mui/material'),
+  ThemeProvider: ({ children }) => children,
+  CssBaseline: () => null,
+}));
+
+// Mock Material-UI icons
+jest.mock('@mui/icons-material', () => ({
+  __esModule: true,
+  default: 'MockedIcon',
+}));
+
+// Mock React Router
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: jest.fn(() => jest.fn()),
+  useLocation: jest.fn(() => ({ pathname: '/', search: '', hash: '', state: null })),
+  useParams: jest.fn(() => ({})),
+  Link: ({ children, ...props }) => <a {...props}>{children}</a>,
+  NavLink: ({ children, ...props }) => <a {...props}>{children}</a>,
+}));
+
+// Mock Axios
+jest.mock('axios', () => ({
+  __esModule: true,
+  default: {
+    get: jest.fn(() => Promise.resolve({ data: {} })),
+    post: jest.fn(() => Promise.resolve({ data: {} })),
+    put: jest.fn(() => Promise.resolve({ data: {} })),
+    delete: jest.fn(() => Promise.resolve({ data: {} })),
+    create: jest.fn(() => ({
+      get: jest.fn(() => Promise.resolve({ data: {} })),
+      post: jest.fn(() => Promise.resolve({ data: {} })),
+      put: jest.fn(() => Promise.resolve({ data: {} })),
+      delete: jest.fn(() => Promise.resolve({ data: {} })),
+    })),
+  },
+}));
+
+// Mock localStorage and sessionStorage
+const createMockStorage = () => ({
+  getItem: jest.fn(() => null),
+  setItem: jest.fn(),
+  removeItem: jest.fn(),
+  clear: jest.fn(),
+  key: jest.fn(() => null),
+  length: 0,
+});
+
+Object.defineProperty(window, 'localStorage', {
+  value: createMockStorage(),
+});
+
+Object.defineProperty(window, 'sessionStorage', {
+  value: createMockStorage(),
+});
+
+// Suppress specific React warnings in tests
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  if (
+    typeof args[0] === 'string' &&
+    args[0].includes('Warning: ReactDOM.render is no longer supported')
+  ) {
+    return;
+  }
+  originalConsoleError(...args);
+};
+
+// Suppress specific React warnings in tests
+const originalConsoleWarn = console.warn;
+console.warn = (...args) => {
+  if (
+    typeof args[0] === 'string' &&
+    (args[0].includes('Warning:') || args[0].includes('was not wrapped in act'))
+  ) {
+    return;
+  }
+  originalConsoleWarn(...args);
+};`;
+
+    // Try to create in src/ first, fallback to root
+    let setupUri = vscode.Uri.file(`${projectRoot}/src/setupTests.js`);
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(`${projectRoot}/src`));
+    } catch {
+      // src directory doesn't exist, create in root
+      setupUri = vscode.Uri.file(`${projectRoot}/setupTests.js`);
+    }
+
+    await vscode.workspace.fs.writeFile(setupUri, Buffer.from(setupContent, 'utf8'));
+    console.log('Generated Enzyme setup file at:', setupUri.fsPath);
+  }
+  const packageJsonUri = vscode.Uri.file(`${projectRoot}/package.json`);
+  try {
+    const packageJsonContent = await vscode.workspace.fs.readFile(packageJsonUri);
+    const packageJson = JSON.parse(packageJsonContent.toString());
+
+    const hasEnzyme = packageJson.dependencies?.enzyme || packageJson.devDependencies?.enzyme;
+    const hasAdapter = packageJson.dependencies?.['enzyme-adapter-react-16'] || packageJson.devDependencies?.['enzyme-adapter-react-16'];
+    const hasReactTestingLibrary = packageJson.dependencies?.['@testing-library/react'] || packageJson.devDependencies?.['@testing-library/react'];
+    const hasJestDom = packageJson.dependencies?.['@testing-library/jest-dom'] || packageJson.devDependencies?.['@testing-library/jest-dom'];
+    const hasIdentityObjProxy = packageJson.dependencies?.['identity-obj-proxy'] || packageJson.devDependencies?.['identity-obj-proxy'];
+
+    const missingDeps = [];
+    if (!hasEnzyme) missingDeps.push('enzyme');
+    if (!hasAdapter) missingDeps.push('enzyme-adapter-react-16');
+    if (!hasReactTestingLibrary) missingDeps.push('@testing-library/react');
+    if (!hasJestDom) missingDeps.push('@testing-library/jest-dom');
+    if (!hasIdentityObjProxy) missingDeps.push('identity-obj-proxy');
+
+    if (missingDeps.length > 0) {
+      vscode.window.showWarningMessage(
+        `Missing testing dependencies: ${missingDeps.join(', ')}. Please install them with: npm install --save-dev ${missingDeps.join(' ')}`
+      );
+    }
+
+    // Check Jest configuration
+    if (!packageJson.jest) {
+      const addJest = 'Add Jest Configuration';
+      const result = await vscode.window.showWarningMessage(
+        'Jest configuration not found in package.json. Would you like to add basic Jest configuration for Enzyme support?',
+        addJest,
+        'Ignore'
+      );
+
+      if (result === addJest) {
+        // Add comprehensive Jest configuration to package.json
+        const jestConfig = {
+          "jest": {
+            "testEnvironment": "jsdom",
+            "setupFilesAfterEnv": [
+              "<rootDir>/src/setupTests.js"
+            ],
+            "transform": {
+              "^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
+            },
+            "transformIgnorePatterns": [
+              "node_modules/(?!enzyme-adapter-react-16|@mui|@emotion)"
+            ],
+            "moduleNameMapper": {
+              "\\.(css|less|scss|sass)$": "identity-obj-proxy",
+              "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/__mocks__/fileMock.js",
+              "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
+              "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js",
+              "^@mui/material/(.*)$": "<rootDir>/__mocks__/@mui/material/$1",
+              "^@mui/icons-material/(.*)$": "<rootDir>/__mocks__/@mui/icons-material/$1",
+              "^react-router-dom$": "<rootDir>/__mocks__/react-router-dom.js",
+              "^axios$": "<rootDir>/__mocks__/axios.js"
+            },
+            "testMatch": [
+              "<rootDir>/src/**/__tests__/**/*.(js|jsx|ts|tsx)",
+              "<rootDir>/src/**/*.(test|spec).(js|jsx|ts|tsx)",
+              "<rootDir>/__tests__/**/*.(js|jsx|ts|tsx)"
+            ],
+            "collectCoverageFrom": [
+              "src/**/*.{js,jsx,ts,tsx}",
+              "!src/**/*.d.ts",
+              "!src/index.js",
+              "!src/setupTests.js"
+            ],
+            "moduleFileExtensions": [
+              "js",
+              "jsx",
+              "ts",
+              "tsx",
+              "json",
+              "node"
+            ],
+            "moduleDirectories": [
+              "node_modules",
+              "src"
+            ]
+          }
+        };
+
+        // Merge Jest config into existing package.json
+        const updatedPackageJson = { ...packageJson, ...jestConfig };
+        const updatedContent = JSON.stringify(updatedPackageJson, null, 2);
+
+        await vscode.workspace.fs.writeFile(packageJsonUri, Buffer.from(updatedContent, 'utf8'));
+        vscode.window.showInformationMessage('Jest configuration added to package.json');
+      }
+    } else {
+      // Check if cheerio mock is mapped
+      const hasCheerioMock = packageJson.jest.moduleNameMapper?.['^cheerio$'] ||
+                            packageJson.jest.moduleNameMapper?.['^cheerio/(.*)$'];
+
+      if (!hasCheerioMock) {
+        vscode.window.showWarningMessage(
+          'Jest moduleNameMapper for cheerio not found. The generated cheerio mock may not be used properly.'
+        );
+      }
+    }
+  } catch (error) {
+    // package.json doesn't exist or can't be read
+    vscode.window.showWarningMessage(
+      'Could not check package.json. Please ensure you have Enzyme dependencies installed: enzyme, enzyme-adapter-react-16'
+    );
+  }
+}
+async function generateTestContentForAll(analysisResult: AnalysisResult): Promise<Array<{name: string, content: string, isReactComponent: boolean}>> {
+  const testResults: Array<{name: string, content: string, isReactComponent: boolean}> = [];
+
+  // Generate tests for components
+  for (const component of analysisResult.components) {
+    const content = generateTestContent(component);
+    testResults.push({
+      name: component.name,
+      content,
+      isReactComponent: true
+    });
+  }
+
+  // Generate tests for functions
+  for (const func of analysisResult.functions) {
+    const content = generateFunctionTestContent(func);
+    testResults.push({
+      name: func.name,
+      content,
+      isReactComponent: false
+    });
+  }
+
+  return testResults;
+}
+
+function generateTestContent(componentInfo: ComponentInfo): string {
+  // Get configuration
+  const config = vscode.workspace.getConfiguration('reactJestGen');
+  const testingLibrary = config.get<string>('testingLibrary', 'rtl');
+  const addSnapshot = config.get<boolean>('addSnapshot', false);
+
+  // Skip generating tests for functions that start with lowercase (likely not components)
+  if (componentInfo.name && componentInfo.name.charAt(0) === componentInfo.name.charAt(0).toLowerCase()) {
+    return ''; // Return empty string to skip this "component"
+  }
+
+  // Generate test content (imports will be handled by combined function)
+  let testContent = `describe('${componentInfo.name}', () => {
+  it('renders without crashing', () => {`;
+
+  if (testingLibrary === 'enzyme') {
+    // Enzyme-specific test patterns with basic props
+    const basicProps = generateBasicProps(componentInfo.props, componentInfo.name);
+    const propsString = basicProps ? ` ${basicProps}` : '';
+    testContent += `\n    const wrapper = shallow(<${componentInfo.name}${propsString} />);\n    expect(wrapper.exists()).toBe(true);`;
+  } else {
+    // React Testing Library patterns
+    testContent += `\n    expect(() => render(<${componentInfo.name} />)).not.toThrow();`;
+  }
+
+  testContent += `\n  });`;
+
+  // Add Enzyme-specific tests if using Enzyme
+  if (testingLibrary === 'enzyme') {
+    // Shallow rendering test
+    testContent += `\n\n  it('should render correctly with shallow', () => {
+    const basicProps = generateBasicProps(componentInfo.props, componentInfo.name);
+    const propsString = basicProps ? \` \${basicProps}\` : '';
+    const wrapper = shallow(<${componentInfo.name}\${propsString} />);\n    expect(wrapper).toMatchSnapshot();
+  });`;
+
+    // Full mounting test
+    testContent += `\n\n  it('should render correctly with mount', () => {
+    const basicProps = generateBasicProps(componentInfo.props, componentInfo.name);
+    const propsString = basicProps ? \` \${basicProps}\` : '';
+    const wrapper = mount(<${componentInfo.name}\${propsString} />);\n    expect(wrapper.find('${componentInfo.name}')).toHaveLength(1);
+  });`;
+
+    // Props test
+    if (componentInfo.props && componentInfo.props.length > 0) {
+      const sampleProps = componentInfo.props.slice(0, 2);
+      const propsString = sampleProps.map((prop: string) => `${prop}="${prop}Value"`).join(' ');
+      testContent += `\n\n  it('should receive and render props correctly', () => {
+    const wrapper = shallow(<${componentInfo.name} ${propsString} />);`;
+
+      sampleProps.forEach((prop: string) => {
+        testContent += `\n    expect(wrapper.prop('${prop}')).toBe('${prop}Value');`;
+      });
+
+      testContent += `\n  });`;
+    }
+
+    // State/Interaction test
+    testContent += `\n\n  it('should handle user interactions', () => {
+    const basicProps = generateBasicProps(componentInfo.props, componentInfo.name);
+    const propsString = basicProps ? \` \${basicProps}\` : '';
+    const wrapper = shallow(<${componentInfo.name}\${propsString} />);
+    // Add interaction tests based on component behavior
+    expect(wrapper).toBeDefined();
+  });`;
+
+  } else {
+    // React Testing Library patterns
+    // Add snapshot test if enabled
+    if (addSnapshot) {
+      testContent += `\n\n  it('matches snapshot', () => {
+    const { container } = render(<${componentInfo.name} />);\n    expect(container.firstChild).toMatchSnapshot();
+  });`;
+    }
+
+    // Add additional tests based on props
+    if (componentInfo.props && componentInfo.props.length > 0) {
+      testContent += `\n\n  it('renders with custom props', () => {`;
+      const customProps = componentInfo.props.slice(0, 2);
+      const customPropsString = customProps.map((prop: string) => `${prop}="custom${prop}"`).join(' ');
+      testContent += `\n    render(<${componentInfo.name} ${customPropsString} />);\n    expect(screen.getByText(/./)).toBeInTheDocument();`;
+      testContent += `\n  });`;
+    }
+  }
+
+  testContent += `\n});\n`;
+
+  return testContent;
+}
+
+function generateFunctionTestContent(functionInfo: ComponentInfo): string {
+  // Generate test content for function (imports will be handled by combined function)
+  let testContent = `describe('${functionInfo.name}', () => {
+  it('should be defined', () => {
+    expect(${functionInfo.name}).toBeDefined();
+  });`;
+
+  // Add parameter tests if function has parameters
+  if (functionInfo.props && functionInfo.props.length > 0) {
+    testContent += `\n\n  it('should handle parameters', () => {`;
+    const sampleParams = functionInfo.props.slice(0, 2);
+    const paramsString = sampleParams.map((param: string) => `"${param}Value"`).join(', ');
+    testContent += `\n    const result = ${functionInfo.name}(${paramsString});`;
+    testContent += `\n    expect(result).toBeDefined(); // Add specific assertions based on function behavior`;
+    testContent += `\n  });`;
+
+    // Add edge case test
+    testContent += `\n\n  it('should handle edge cases', () => {`;
+    const edgeParams = functionInfo.props.map(() => 'null').slice(0, 2);
+    const edgeParamsString = edgeParams.join(', ');
+    testContent += `\n    const result = ${functionInfo.name}(${edgeParamsString});`;
+    testContent += `\n    expect(result).toBeDefined(); // Add specific assertions for edge cases`;
+    testContent += `\n  });`;
+  } else {
+    testContent += `\n\n  it('should execute without parameters', () => {`;
+    testContent += `\n    const result = ${functionInfo.name}();`;
+    testContent += `\n    expect(result).toBeDefined(); // Add specific assertions based on function behavior`;
+    testContent += `\n  });`;
+  }
+
+  testContent += `\n});\n`;
+
+  return testContent;
+}
+
+function generateBasicProps(props?: string[], componentName?: string): string {
+  if (!props || props.length === 0) {
+    return '';
+  }
+
+  // Special handling for specific components that need complex props
+  if (componentName === 'ConditionOperand' || componentName === 'FormulaNode') {
+    // These components need a 'node' prop with specific structure
+    const nodeProp = `node={{
+      type: 'cellValue',
+      value: 'A1'
+    }}`;
+    return nodeProp;
+  }
+
+  if (componentName === 'Collapsible') {
+    // Collapsible needs label and children props
+    return `label="Test Label" children={<div>Test Content</div>}`;
+  }
+
+  // Generate basic props for common component patterns
+  const basicProps: string[] = [];
+
+  props.slice(0, 5).forEach(prop => { // Increased from 3 to 5 props
+    // Provide sensible default values based on prop names
+    const lowerProp = prop.toLowerCase();
+
+    if (lowerProp.includes('on') && (lowerProp.includes('click') || lowerProp.includes('change') || lowerProp.includes('submit'))) {
+      basicProps.push(`${prop}={jest.fn()}`);
+    } else if (lowerProp.includes('value') || lowerProp.includes('text') || lowerProp.includes('label') || lowerProp.includes('title')) {
+      basicProps.push(`${prop}="${prop}Value"`);
+    } else if (lowerProp.includes('id') || lowerProp.includes('key') || lowerProp.includes('name')) {
+      basicProps.push(`${prop}="${prop}1"`);
+    } else if (lowerProp.includes('children')) {
+      basicProps.push(`${prop}={<div>Test Child</div>}`);
+    } else if (lowerProp.includes('class') || lowerProp.includes('style')) {
+      basicProps.push(`${prop}="${prop}Value"`);
+    } else if (lowerProp.includes('disabled') || lowerProp.includes('visible') || lowerProp.includes('hidden') || lowerProp.includes('checked') || lowerProp.includes('selected')) {
+      basicProps.push(`${prop}={false}`);
+    } else if (lowerProp.includes('count') || lowerProp.includes('index') || lowerProp.includes('length') || lowerProp.includes('size')) {
+      basicProps.push(`${prop}={0}`);
+    } else if (lowerProp.includes('data') || lowerProp.includes('items') || lowerProp.includes('list')) {
+      basicProps.push(`${prop}={[]}`);
+    } else if (lowerProp.includes('loading') || lowerProp.includes('isloading')) {
+      basicProps.push(`${prop}={false}`);
+    } else if (lowerProp.includes('error') || lowerProp.includes('errormessage')) {
+      basicProps.push(`${prop}={null}`);
+    } else if (lowerProp.includes('callback') || lowerProp.includes('handler')) {
+      basicProps.push(`${prop}={jest.fn()}`);
+    } else {
+      // Default fallback with better type inference
+      if (lowerProp.includes('number') || lowerProp.includes('count') || lowerProp.includes('age') || lowerProp.includes('year')) {
+        basicProps.push(`${prop}={42}`);
+      } else if (lowerProp.includes('date') || lowerProp.includes('time')) {
+        basicProps.push(`${prop}={new Date()}`);
+      } else if (lowerProp.includes('object') || lowerProp.includes('config') || lowerProp.includes('options')) {
+        basicProps.push(`${prop}={{}}`);
+      } else {
+        // Default string fallback
+        basicProps.push(`${prop}="${prop}Value"`);
+      }
+    }
+  });
+
+  return basicProps.join(' ');
+}
+
+function getRelativeImportPath(sourceUri: vscode.Uri): string {
+  // For now, use relative import from test file to source file
+  // This could be enhanced to use path mapping from tsconfig/jsconfig
+  return `./${sourceUri.fsPath.split(/[/\\]/).pop()?.replace(/\.(js|jsx|ts|tsx)$/, '')}`;
+}
+
+function generateCombinedTestContent(testResults: Array<{name: string, content: string, isReactComponent: boolean}>, sourceUri: vscode.Uri): string {
+  // Get configuration
+  const config = vscode.workspace.getConfiguration('reactJestGen');
+  const testingLibrary = config.get<string>('testingLibrary', 'rtl');
+
+  // Build imports - only once at the top
+  let imports = '';
+  // For now, assume Jest - could be enhanced to support other frameworks
+  if (true) { // framework === 'jest'
+    // Don't import Jest globals as they're available globally
+    // imports += `import { describe, it${isTypeScript ? ', expect' : ''} } from '${isTypeScript ? '@jest/globals' : 'jest'}';\n`;
+  }
+
+  if (testingLibrary === 'rtl') {
+    imports += `import { render, screen } from '@testing-library/react';\n`;
+    imports += `import '@testing-library/jest-dom';\n`;
+  } else if (testingLibrary === 'enzyme') {
+    imports += `import { shallow, mount } from 'enzyme';\n`;
+    imports += `import Adapter from 'enzyme-adapter-react-16';\n`;
+    imports += `import { configure } from 'enzyme';\n`;
+    imports += `\n// Configure Enzyme adapter\nconfigure({ adapter: new Adapter() });\n\n`;
+  }
+
+  // Collect all imports needed
+  const componentImports = new Set<string>();
+  const functionImports = new Set<string>();
+  const relativePath = getRelativeImportPath(sourceUri);
+
+  testResults.forEach(result => {
+    if (result.isReactComponent && result.content.trim() !== '') {
+      componentImports.add(result.name);
+    } else if (!result.isReactComponent && result.content.trim() !== '') {
+      functionImports.add(result.name);
+    }
+  });
+
+  // Generate combined imports
+  if (componentImports.size > 0) {
+    imports += `import { ${Array.from(componentImports).join(', ')} } from '${relativePath}';\n`;
+  }
+  if (functionImports.size > 0) {
+    imports += `import { ${Array.from(functionImports).join(', ')} } from '${relativePath}';\n`;
+  }
+
+  // Combine all test suites (without their individual imports)
+  const testSuites = testResults
+    .filter(result => result.content.trim() !== '') // Filter out empty test content
+    .map(result => {
+      // Remove the imports from each test result (everything before the first describe)
+      const lines = result.content.split('\n');
+      const firstDescribeIndex = lines.findIndex(line => line.trim().startsWith('describe('));
+      return lines.slice(firstDescribeIndex).join('\n');
+    }).join('\n');
+
+  return `${imports}\n${testSuites}`;
+}
+
+async function createTestFiles(testResults: Array<{name: string, content: string, isReactComponent: boolean}>, sourceUri: vscode.Uri): Promise<vscode.Uri[]> {
+  const createdFiles: vscode.Uri[] = [];
+
+  // Get configuration for test file combination
+  const config = vscode.workspace.getConfiguration('reactJestGen');
+  const combineTests = config.get<boolean>('combineTests', true);
+
+  // Combine tests if configured to do so OR if there are multiple test results
+  const shouldCombine = combineTests || testResults.length > 1;
+
+  if (shouldCombine) {
+    // Create a single combined test file
+    const combinedContent = generateCombinedTestContent(testResults, sourceUri);
+    const testUri = await createTestFile(sourceUri, combinedContent);
+    if (testUri) {
+      createdFiles.push(testUri);
+    }
+  } else {
+    // Create separate test files for each component/function
+    for (const result of testResults) {
+      const testUri = await createTestFile(sourceUri, result.content, result.name);
+      if (testUri) {
+        createdFiles.push(testUri);
+      }
+    }
+  }
+
+  return createdFiles;
+}
+
+async function createTestFile(sourceUri: vscode.Uri, content: string, suffix?: string): Promise<vscode.Uri | undefined> {
+  // Get configuration for test file path pattern
+  const config = vscode.workspace.getConfiguration('reactJestGen');
+  const testPathPattern = config.get<string>('testPathPattern', '${componentDir}/${componentName}.test.${testExt}');
+
+  // Parse the pattern and create the test file path
+  const testPath = resolveTestPath(testPathPattern, sourceUri, suffix);
+
+  const testUri = vscode.Uri.file(testPath);
+
+  // Check if test file already exists
+  try {
+    await vscode.workspace.fs.stat(testUri);
+    const fileName = testPath.split(/[/\\]/).pop() || 'test file';
+    const overwrite = await vscode.window.showWarningMessage(
+      `Test file ${fileName} already exists. Overwrite?`,
+      'Yes',
+      'No'
+    );
+
+    if (overwrite !== 'Yes') {
+      return undefined;
+    }
+  } catch {
+    // File doesn't exist, proceed
+  }
+
+  // Write the test file
+  await vscode.workspace.fs.writeFile(testUri, Buffer.from(content, 'utf8'));
+
+  return testUri;
+}
+
+function resolveTestPath(pattern: string, sourceUri: vscode.Uri, suffix?: string): string {
+  const sourcePath = sourceUri.fsPath;
+  const sourceDir = sourcePath.substring(0, sourcePath.lastIndexOf('\\') !== -1 ? sourcePath.lastIndexOf('\\') : sourcePath.lastIndexOf('/'));
+  const fileName = sourcePath.split(/[/\\]/).pop() || '';
+  const componentName = fileName.replace(/\.(js|jsx|ts|tsx)$/, '');
+  const isTypeScript = sourcePath.endsWith('.tsx') || sourcePath.endsWith('.ts');
+  const testExt = isTypeScript ? '.tsx' : '.js';
+
+  // Use suffix for individual test files, or source file name for combined test file
+  const testName = suffix || componentName;
+
+  // Simple token replacement - this could be enhanced
+  let testPath = pattern
+    .replace('${componentDir}', sourceDir)
+    .replace('${componentName}', testName)
+    .replace('${testExt}', testExt.substring(1)); // Remove the dot
+
+  return testPath;
+}
