@@ -3,19 +3,50 @@
   "displayName": "React Jest Test Generator",
   "description": "Generate Jest test cases for React components with Enzyme support. Automatically generates cheerio mocks and setupTests.js for React 16 projects.",
   "version": "0.0.1",
+  "publisher": "DCX",
+  "author": {
+    "name": "Neelmani Sharma"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/coder-dcx/react-jest-test-generator"
+  },
+  "homepage": "https://github.com/coder-dcx/react-jest-test-generator#readme",
+  "bugs": {
+    "url": "https://github.com/coder-dcx/react-jest-test-generator/issues"
+  },
   "engines": {
     "vscode": "^1.70.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Testing"
   ],
+  "keywords": [
+    "react",
+    "jest",
+    "testing",
+    "test-generator",
+    "enzyme",
+    "react-testing-library",
+    "vscode-extension"
+  ],
+  "galleryBanner": {
+    "color": "#61dafb",
+    "theme": "light"
+  },
+  "icon": "images/icon.png",
   "activationEvents": [
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "scripts": {
-    "watch": "tsc --watch --noEmit",
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
+    "watch": "tsc --watch --noEmit",
+    "package": "vsce package",
+    "publish": "vsce publish",
     "pretest": "npm run compile"
   },
   "contributes": {
