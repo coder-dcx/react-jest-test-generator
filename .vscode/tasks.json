@@ -2,8 +2,10 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "type": "npm",
-      "script": "watch",
+      "label": "npm: watch",
+      "type": "shell",
+      "command": "npx",
+      "args": ["tsc", "--watch", "--noEmit"],
       "group": "build",
       "presentation": {
         "panel": "shared",
@@ -15,8 +17,7 @@
       ],
       "runOptions": {
         "runOn": "folderOpen"
-      },
-      "label": "npm: watch"
+      }
     },
     {
       "type": "npm",

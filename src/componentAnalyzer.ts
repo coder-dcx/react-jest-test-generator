@@ -41,6 +41,8 @@ export class ComponentAnalyzer {
       const filePath = uri.fsPath;
       const content = await fs.promises.readFile(filePath, 'utf-8');
 
+      console.log(`🔍 Analyzing file: ${filePath}`);
+
       // Parse the file using Babel parser
       const ast = this.parseFile(content, filePath);
 
@@ -51,6 +53,10 @@ export class ComponentAnalyzer {
 
       // Extract all component and function information
       const result = this.extractAllComponentsAndFunctions(ast, filePath);
+
+      console.log(`📊 Analysis result: ${result.components.length} components, ${result.functions.length} functions`);
+      console.log('Components found:', result.components.map(c => `${c.name} (${c.exportType})`));
+      console.log('Functions found:', result.functions.map(f => `${f.name} (${f.exportType})`));
 
       return result;
     } catch (error) {
@@ -142,8 +148,10 @@ export class ComponentAnalyzer {
           processedDeclarations.add(componentName);
           if (isReact) {
             components.push(info);
+            this.logComponentInfo(info, 'component');
           } else {
             functions.push(info);
+            this.logComponentInfo(info, 'function');
           }
           mainExport = info;
         } else if (t.isArrowFunctionExpression(declaration) || t.isFunctionExpression(declaration)) {
@@ -232,8 +240,10 @@ export class ComponentAnalyzer {
           processedDeclarations.add(functionName);
           if (isReact) {
             components.push(info);
+            this.logComponentInfo(info, 'component');
           } else {
             functions.push(info);
+            this.logComponentInfo(info, 'function');
           }
         } else if (t.isVariableDeclaration(declaration)) {
           for (const declarator of declaration.declarations) {
@@ -345,21 +355,8 @@ export class ComponentAnalyzer {
             const lineNumber = declarator.loc?.start.line;
 
             if (declarator.init) {
-              if (this.isReactComponentExpression(declarator.init)) {
-                const info: ComponentInfo = {
-                  name: varName,
-                  exportType: 'named',
-                  filePath,
-                  isReactComponent: true,
-                  isFunction: false,
-                  props: this.extractPropsFromExpression(),
-                  hasDefaultProps: false,
-                  lineNumber
-                };
-
-                processedDeclarations.add(varName);
-                components.push(info);
-              } else if (t.isArrowFunctionExpression(declarator.init) || t.isFunctionExpression(declarator.init)) {
+              // Check for arrow functions first, as they are the most common pattern
+              if (t.isArrowFunctionExpression(declarator.init) || t.isFunctionExpression(declarator.init)) {
                 const isReact = this.containsJSX(declarator.init.body);
                 const info: ComponentInfo = {
                   name: varName,
@@ -375,9 +372,26 @@ export class ComponentAnalyzer {
                 processedDeclarations.add(varName);
                 if (isReact) {
                   components.push(info);
+                  this.logComponentInfo(info, 'component');
                 } else {
                   functions.push(info);
+                  this.logComponentInfo(info, 'function');
                 }
+              } else if (this.isReactComponentExpression(declarator.init)) {
+                const info: ComponentInfo = {
+                  name: varName,
+                  exportType: 'named',
+                  filePath,
+                  isReactComponent: true,
+                  isFunction: false,
+                  props: this.extractPropsFromExpression(),
+                  hasDefaultProps: false,
+                  lineNumber
+                };
+
+                processedDeclarations.add(varName);
+                components.push(info);
+                this.logComponentInfo(info, 'component');
               }
             }
           }
@@ -409,6 +423,13 @@ export class ComponentAnalyzer {
   }
 
   /**
+   * Logs component information for debugging
+   */
+  private static logComponentInfo(component: ComponentInfo, type: 'component' | 'function'): void {
+    console.log(`  ${type}: ${component.name} (${component.exportType}) - props: [${component.props?.join(', ') || 'none'}]`);
+  }
+
+  /**
    * Checks if a function declaration is a React component
    */
   private static isReactComponentFunction(funcDecl: t.FunctionDeclaration): boolean {
@@ -420,25 +441,33 @@ export class ComponentAnalyzer {
    * Extracts function parameters as potential props
    */
   private static extractFunctionParams(params: t.Function['params']): string[] {
-    return params
-      .map(param => {
-        if (t.isIdentifier(param)) {
-          return param.name;
-        } else if (t.isObjectPattern(param)) {
-          // Handle destructured parameters
-          return param.properties
-            .map(prop => {
-              if (t.isObjectProperty(prop) && t.isIdentifier(prop.key)) {
-                return prop.key.name;
-              }
-              return null;
-            })
-            .filter((name): name is string => name !== null);
+    const extractedProps: string[] = [];
+
+    params.forEach(param => {
+      if (t.isIdentifier(param)) {
+        extractedProps.push(param.name);
+      } else if (t.isObjectPattern(param)) {
+        // Handle destructured parameters like { node, onChange, label }
+        param.properties.forEach(prop => {
+          if (t.isObjectProperty(prop) && t.isIdentifier(prop.key)) {
+            extractedProps.push(prop.key.name);
+          } else if (t.isRestElement(prop) && t.isIdentifier(prop.argument)) {
+            // Handle rest parameters like ...rest
+            extractedProps.push(prop.argument.name);
+          }
+        });
+      } else if (t.isRestElement(param) && t.isIdentifier(param.argument)) {
+        // Handle rest parameters like ...args
+        extractedProps.push(param.argument.name);
+      } else if (t.isAssignmentPattern(param)) {
+        // Handle default parameters like param = defaultValue
+        if (t.isIdentifier(param.left)) {
+          extractedProps.push(param.left.name);
         }
-        return null;
-      })
-      .flat()
-      .filter((name): name is string => name !== null);
+      }
+    });
+
+    return extractedProps;
   }
 
   /**

@@ -10,6 +10,14 @@
       "preLaunchTask": "npm: watch"
     },
     {
+      "name": "Run Extension (No Watch)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": ""
+    },
+    {
       "name": "Extension Tests",
       "type": "extensionHost",
       "request": "launch",

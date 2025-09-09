@@ -14,7 +14,7 @@
   ],
   "main": "./out/extension.js",
   "scripts": {
-    "watch": "tsc --watch",
+    "watch": "tsc --watch --noEmit",
     "compile": "tsc -p .",
     "pretest": "npm run compile"
   },
@@ -99,13 +99,21 @@
             "**/.next/**"
           ],
           "description": "Glob patterns for files to exclude from scanning"
+        },
+        "reactJestGen.includeMountTests": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to include mount tests (requires jsdom, not compatible with Create React App by default)"
+        },
+        "reactJestGen.skipContextDependentTests": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to skip tests for components that have context dependencies"
         }
       }
     }
   },
   "jest": {
-    "testEnvironment": "jsdom",
-    "setupFilesAfterEnv": ["<rootDir>/src/setupTests.js"],
     "transform": {
       "^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
     },
@@ -148,6 +156,7 @@
     "jest-environment-jsdom": "^30.1.2",
     "mocha": "^10.1.0",
     "node-fetch": "^3.3.2",
+    "ts-node": "^10.9.2",
     "typescript": "^4.9.3"
   },
   "dependencies": {
