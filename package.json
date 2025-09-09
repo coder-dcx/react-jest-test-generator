@@ -3,7 +3,7 @@
   "displayName": "React Jest Test Generator",
   "description": "Generate Jest test cases for React components with Enzyme support. Automatically generates cheerio mocks and setupTests.js for React 16 projects.",
   "version": "0.0.1",
-  "publisher": "DCX",
+  "publisher": "Datacenterx",
   "author": {
     "name": "Neelmani Sharma"
   },
