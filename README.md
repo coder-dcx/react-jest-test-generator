@@ -47,6 +47,20 @@ vsce package
 code --install-extension react-jest-test-generator-*.vsix
 ```
 
+## 🚀 Deployment to Marketplace
+
+Want to publish this extension to the VS Code Marketplace? Check out our comprehensive deployment guide:
+
+📖 **[Deployment Steps](./deployment-steps.md)** - Complete guide for publishing to VS Code Marketplace
+
+The guide covers:
+- Setting up publisher accounts
+- Configuring your extension for marketplace
+- Building and packaging
+- Publishing with VSCE
+- Troubleshooting common issues
+- Automated publishing with GitHub Actions
+
 ## 🚀 Quick Start
 
 ### For Create React App Projects
