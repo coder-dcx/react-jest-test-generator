@@ -61,8 +61,8 @@ module.exports = {
     "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
     "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js",
     "^node:(.*)$": "$1",
-    "^@material-ui/core/(.*)$": "<rootDir>/__mocks__/@material-ui/core/$1",
-    "^@material-ui/icons/(.*)$": "<rootDir>/__mocks__/@material-ui/icons/$1"
+    "^@material-ui/core/(.*)$": "<rootDir>/node_modules/@material-ui/core/$1",
+    "^@material-ui/icons/(.*)$": "<rootDir>/node_modules/@material-ui/icons/$1"
   }
 };
 ```
