@@ -2,7 +2,7 @@
   "name": "react-jest-test-generator",
   "displayName": "React Jest Test Generator",
   "description": "Generate Jest test cases for React components with Enzyme support. Automatically generates cheerio mocks and setupTests.js for React 16 projects.",
-  "version": "0.0.3",
+  "version": "0.0.6",
   "publisher": "Datacenterx",
   "author": {
     "name": "Neelmani Sharma"
@@ -47,13 +47,19 @@
     "watch": "tsc --watch --noEmit",
     "package": "vsce package",
     "publish": "vsce publish",
-    "pretest": "npm run compile"
+    "pretest": "npm run compile",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "contributes": {
     "commands": [
       {
         "command": "reactJestGen.generateTest",
         "title": "Generate Test for File"
+      },
+      {
+        "command": "reactJestGen.showTroubleshooting",
+        "title": "React Jest Gen: Show Troubleshooting Guide"
       }
     ],
     "menus": {
@@ -155,7 +161,8 @@
     "moduleNameMapper": {
       "\\.(css|less|scss|sass)$": "identity-obj-proxy",
       "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
-      "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js"
+      "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js",
+      "^node:(.*)$": "$1"
     },
     "setupFilesAfterEnv": [
       "<rootDir>/src/setupTests.js"

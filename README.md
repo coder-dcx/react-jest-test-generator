@@ -449,6 +449,65 @@ describe('Counter', () => {
 });
 ```
 
+## 🔧 Troubleshooting
+
+### Common Issues and Solutions
+
+#### Issue 1: "Jest moduleNameMapper for cheerio not found"
+**Symptoms**: Warning message when generating tests with Enzyme
+**Solution**: Add the following to your `package.json` Jest configuration:
+```json
+{
+  "jest": {
+    "moduleNameMapper": {
+      "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
+      "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js"
+    }
+  }
+}
+```
+
+#### Issue 2: "ENOENT: no such file or directory, open 'node:stream'"
+**Symptoms**: Module resolution errors with Node.js built-in modules
+**Solution**: Add Node.js module mapping to your Jest configuration:
+```json
+{
+  "jest": {
+    "moduleNameMapper": {
+      "^node:(.*)$": "$1"
+    }
+  }
+}
+```
+
+#### Issue 3: ESLint import/first errors in generated tests
+**Symptoms**: ESLint complains about import order in generated test files
+**Solution**: This is automatically fixed in version 0.0.4+. Update the extension or ensure React imports come first.
+
+#### Issue 4: "Cannot find module '@mui/material/styles'" with Material-UI v4
+**Symptoms**: Test fails with "Cannot find module '@mui/material/styles'" when using Material-UI v4 (@material-ui/core)
+**Solution**: The extension now automatically detects your Material-UI version (v4 or v5) and generates appropriate mocks. Update to extension version 0.0.5+ for automatic detection.
+
+**Manual Fix** (if needed):
+- For Material-UI v4: Use `@material-ui/core/styles` instead of `@mui/material/styles`
+- For Material-UI v5: Use `@mui/material/styles`
+
+#### Issue 5: Material-UI compatibility issues
+**Symptoms**: Tests fail with Material-UI component errors
+**Solution**: The extension automatically detects your Material-UI version and generates appropriate mocks. Ensure you have the correct version installed.
+
+#### Complete Jest Configuration Example
+For a comprehensive setup that resolves all common issues, see:
+- `example-jest.config.js` - Basic Jest configuration with all fixes
+- `jest-config-examples.js` - Advanced configuration with dynamic Material-UI detection
+
+### Latest Fixes (v0.0.5)
+- ✅ **Dynamic Material-UI Version Detection**: Automatically detects Material-UI v4 vs v5 and generates appropriate mocks
+- ✅ **Import Order Fixes**: React imports always come first (ESLint import/first compliance)
+- ✅ **Node.js Module Compatibility**: Fixes `node:stream` and other Node.js built-in module errors
+- ✅ **Enhanced Cheerio Mocking**: Comprehensive cheerio mock for Enzyme compatibility
+- ✅ **Intelligent Configuration**: Generates Jest configuration based on your project's actual dependencies
+
 ## ❓ FAQ
 
 ### Q: Does this work with TypeScript?

@@ -83,7 +83,76 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  context.subscriptions.push(generateTestCommand);
+  // Register troubleshooting command
+  const troubleshootingCommand = vscode.commands.registerCommand('reactJestGen.showTroubleshooting', async () => {
+    const troubleshootingContent = `
+# React Jest Test Generator - Troubleshooting Guide
+
+## Common Error: ENOENT: no such file or directory, open 'node:stream'
+
+This error occurs when Jest cannot resolve Node.js built-in modules. Here's how to fix it:
+
+### Quick Fix for package.json
+
+Add this Jest configuration to your project's package.json:
+
+\`\`\`json
+{
+  "jest": {
+    "moduleNameMapper": {
+      "^node:(.*)$": "$1",
+      "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
+      "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js"
+    }
+  }
+}
+\`\`\`
+
+### For Material-UI v4 Projects
+
+If you're using @material-ui/core (v4), also add:
+
+\`\`\`json
+"^@material-ui/core/(.*)$": "<rootDir>/__mocks__/@material-ui/core/$1",
+"^@material-ui/icons/(.*)$": "<rootDir>/__mocks__/@material-ui/icons/$1"
+\`\`\`
+
+### For Material-UI v5 Projects
+
+If you're using @mui/material (v5), also add:
+
+\`\`\`json
+"^@mui/material/(.*)$": "<rootDir>/__mocks__/@mui/material/$1",
+"^@mui/icons-material/(.*)$": "<rootDir>/__mocks__/@mui/icons-material/$1"
+\`\`\`
+
+### Create React App Projects
+
+If you can't modify package.json, create a jest.config.js file:
+
+\`\`\`javascript
+module.exports = {
+  moduleNameMapper: {
+    "^node:(.*)$": "$1",
+    "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
+    "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js"
+  }
+};
+\`\`\`
+
+The extension automatically generates the necessary mock files for you.
+`;
+
+    // Create a new untitled document with the troubleshooting content
+    const doc = await vscode.workspace.openTextDocument({
+      content: troubleshootingContent,
+      language: 'markdown'
+    });
+    
+    await vscode.window.showTextDocument(doc);
+  });
+
+  context.subscriptions.push(generateTestCommand, troubleshootingCommand);
 }
 
 export function deactivate() {
@@ -98,6 +167,24 @@ async function ensureEnzymeSetup(sourceUri: vscode.Uri): Promise<void> {
   }
 
   const projectRoot = workspaceFolder.uri.fsPath;
+
+  // Detect Material-UI version from package.json
+  let materialUIVersion: 'mui' | 'material-ui' | null = null;
+  try {
+    const packageJsonPath = vscode.Uri.file(`${projectRoot}/package.json`);
+    const packageJsonContent = await vscode.workspace.fs.readFile(packageJsonPath);
+    const packageJson = JSON.parse(packageJsonContent.toString());
+    
+    const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
+    
+    if (dependencies['@mui/material']) {
+      materialUIVersion = 'mui';
+    } else if (dependencies['@material-ui/core']) {
+      materialUIVersion = 'material-ui';
+    }
+  } catch (error) {
+    // package.json not found or invalid, continue without Material-UI detection
+  }
 
   // Check if __mocks__ directory exists, create if not
   const mocksDir = vscode.Uri.file(`${projectRoot}/__mocks__`);
@@ -325,7 +412,9 @@ Object.defineProperty(navigator, 'clipboard', {
   },
 });
 
-// Mock Material-UI theme and styles (using @mui/material for modern React)
+// Mock Material-UI theme and styles (conditional based on available packages)
+${materialUIVersion === 'mui' ? `
+// Mock modern @mui/material
 jest.mock('@mui/material/styles', () => ({
   ...jest.requireActual('@mui/material/styles'),
   createTheme: jest.fn(() => ({
@@ -334,6 +423,8 @@ jest.mock('@mui/material/styles', () => ({
   })),
   ThemeProvider: ({ children }) => children,
   styled: jest.fn(() => jest.fn(() => null)),
+  withStyles: jest.fn(() => (Component) => Component),
+  makeStyles: jest.fn(() => () => ({})),
 }));
 
 jest.mock('@mui/material', () => ({
@@ -342,11 +433,38 @@ jest.mock('@mui/material', () => ({
   CssBaseline: () => null,
 }));
 
-// Mock Material-UI icons
+// Mock Material-UI icons (modern @mui/icons-material)
 jest.mock('@mui/icons-material', () => ({
   __esModule: true,
   default: 'MockedIcon',
 }));
+` : materialUIVersion === 'material-ui' ? `
+// Mock legacy @material-ui/core
+jest.mock('@material-ui/core/styles', () => ({
+  ...jest.requireActual('@material-ui/core/styles'),
+  createTheme: jest.fn(() => ({
+    palette: { primary: { main: '#000' }, secondary: { main: '#000' } },
+    breakpoints: { up: jest.fn(() => '@media (min-width:0px)') }
+  })),
+  ThemeProvider: ({ children }) => children,
+  withStyles: jest.fn(() => (Component) => Component),
+  makeStyles: jest.fn(() => () => ({})),
+}));
+
+jest.mock('@material-ui/core', () => ({
+  ...jest.requireActual('@material-ui/core'),
+  ThemeProvider: ({ children }) => children,
+  CssBaseline: () => null,
+}));
+
+// Mock Material-UI icons
+jest.mock('@material-ui/icons', () => ({
+  __esModule: true,
+  default: 'MockedIcon',
+}));
+` : `
+// No Material-UI packages found, skipping Material-UI mocks
+`}
 
 // Mock React Router
 jest.mock('react-router-dom', () => ({
@@ -463,6 +581,26 @@ console.warn = (...args) => {
       );
 
       if (result === addJest) {
+        // Build dynamic moduleNameMapper based on detected Material-UI version
+        const moduleNameMapper: { [key: string]: string } = {
+          "\\.(css|less|scss|sass)$": "identity-obj-proxy",
+          "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/__mocks__/fileMock.js",
+          "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
+          "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js",
+          "^node:(.*)$": "$1",
+          "^react-router-dom$": "<rootDir>/__mocks__/react-router-dom.js",
+          "^axios$": "<rootDir>/__mocks__/axios.js"
+        };
+
+        // Add Material-UI mappings based on detected version
+        if (materialUIVersion === 'mui') {
+          moduleNameMapper["^@mui/material/(.*)$"] = "<rootDir>/__mocks__/@mui/material/$1";
+          moduleNameMapper["^@mui/icons-material/(.*)$"] = "<rootDir>/__mocks__/@mui/icons-material/$1";
+        } else if (materialUIVersion === 'material-ui') {
+          moduleNameMapper["^@material-ui/core/(.*)$"] = "<rootDir>/__mocks__/@material-ui/core/$1";
+          moduleNameMapper["^@material-ui/icons/(.*)$"] = "<rootDir>/__mocks__/@material-ui/icons/$1";
+        }
+
         // Add comprehensive Jest configuration to package.json
         const jestConfig = {
           "jest": {
@@ -472,16 +610,7 @@ console.warn = (...args) => {
             "transformIgnorePatterns": [
               "node_modules/(?!enzyme-adapter-react-16|@mui|@emotion)"
             ],
-            "moduleNameMapper": {
-              "\\.(css|less|scss|sass)$": "identity-obj-proxy",
-              "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/__mocks__/fileMock.js",
-              "^cheerio$": "<rootDir>/__mocks__/cheerio.js",
-              "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js",
-              "^@mui/material/(.*)$": "<rootDir>/__mocks__/@mui/material/$1",
-              "^@mui/icons-material/(.*)$": "<rootDir>/__mocks__/@mui/icons-material/$1",
-              "^react-router-dom$": "<rootDir>/__mocks__/react-router-dom.js",
-              "^axios$": "<rootDir>/__mocks__/axios.js"
-            },
+            "moduleNameMapper": moduleNameMapper,
             "testMatch": [
               "<rootDir>/src/**/__tests__/**/*.(js|jsx|ts|tsx)",
               "<rootDir>/src/**/*.(test|spec).(js|jsx|ts|tsx)",
@@ -519,11 +648,74 @@ console.warn = (...args) => {
       // Check if cheerio mock is mapped
       const hasCheerioMock = packageJson.jest.moduleNameMapper?.['^cheerio$'] ||
                             packageJson.jest.moduleNameMapper?.['^cheerio/(.*)$'];
+      
+      // Check if Node.js modules are mapped
+      const hasNodeModuleMapping = packageJson.jest.moduleNameMapper?.['^node:(.*)$'];
+
+      // Check Material-UI mappings based on detected version
+      let materialUIMappingValid = true;
+      if (materialUIVersion === 'mui') {
+        const hasMuiMapping = packageJson.jest.moduleNameMapper?.['^@mui/material/(.*)$'] ||
+                             packageJson.jest.moduleNameMapper?.['^@mui/icons-material/(.*)$'];
+        if (!hasMuiMapping) {
+          materialUIMappingValid = false;
+        }
+      } else if (materialUIVersion === 'material-ui') {
+        const hasMaterialUiMapping = packageJson.jest.moduleNameMapper?.['^@material-ui/core/(.*)$'] ||
+                                    packageJson.jest.moduleNameMapper?.['^@material-ui/icons/(.*)$'];
+        if (!hasMaterialUiMapping) {
+          materialUIMappingValid = false;
+        }
+      }
 
       if (!hasCheerioMock) {
+        const action = 'Show Fix';
         vscode.window.showWarningMessage(
-          'Jest moduleNameMapper for cheerio not found. The generated cheerio mock may not be used properly.'
-        );
+          'Jest moduleNameMapper for cheerio not found. The generated cheerio mock may not be used properly.',
+          action
+        ).then(selection => {
+          if (selection === action) {
+            vscode.window.showInformationMessage(
+              'Add to your package.json Jest config: "^cheerio$": "<rootDir>/__mocks__/cheerio.js", "^cheerio/(.*)$": "<rootDir>/__mocks__/cheerio.js"'
+            );
+          }
+        });
+      }
+
+      if (!hasNodeModuleMapping) {
+        const showFix = 'Show Fix';
+        const openGuide = 'Open Troubleshooting Guide';
+        vscode.window.showWarningMessage(
+          'Jest moduleNameMapper for Node.js built-in modules not found. You may encounter "node:stream" errors.',
+          showFix,
+          openGuide
+        ).then(selection => {
+          if (selection === showFix) {
+            vscode.window.showInformationMessage(
+              'Add to your package.json Jest config: "^node:(.*)$": "$1" - This fixes ENOENT node:stream errors'
+            );
+          } else if (selection === openGuide) {
+            vscode.commands.executeCommand('reactJestGen.showTroubleshooting');
+          }
+        });
+      }
+
+      if (!materialUIMappingValid && materialUIVersion) {
+        const versionStr = materialUIVersion === 'mui' ? '@mui/material' : '@material-ui/core';
+        const action = 'Show Fix';
+        vscode.window.showWarningMessage(
+          `Jest moduleNameMapper for ${versionStr} not found. Material-UI components may not be mocked properly.`,
+          action
+        ).then(selection => {
+          if (selection === action) {
+            const mapping = materialUIVersion === 'mui' 
+              ? '"^@mui/material/(.*)$": "<rootDir>/__mocks__/@mui/material/$1"'
+              : '"^@material-ui/core/(.*)$": "<rootDir>/__mocks__/@material-ui/core/$1"';
+            vscode.window.showInformationMessage(
+              `Add to your package.json Jest config: ${mapping}`
+            );
+          }
+        });
       }
     }
   } catch (error) {
