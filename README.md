@@ -491,4 +491,11 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 **Happy Testing!** 🧪✨
 
-*Generated with ❤️ for the React testing community*
+All code samples and documentation are provided "as is" without warranty of any kind. Use at your own risk.
+
+-*Generated with ❤️ for the React testing community*
+
+**Author By:** Neelmani Sharma
+**Support Me:** [Buy Me a Coffee](UPI ID: neel.sam98@okaxis)
+**Contact Me:** datacenterx.work@gmail.com
+
