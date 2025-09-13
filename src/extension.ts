@@ -940,6 +940,11 @@ function generateCombinedTestContent(testResults: Array<{name: string, content: 
 
   // Build imports - only once at the top
   let imports = '';
+  let setupCode = '';
+  
+  // Always add React import first for JSX (required by ESLint import/first rule)
+  imports += `import React from 'react';\n`;
+  
   // For now, assume Jest - could be enhanced to support other frameworks
   if (true) { // framework === 'jest'
     // Don't import Jest globals as they're available globally
@@ -953,11 +958,9 @@ function generateCombinedTestContent(testResults: Array<{name: string, content: 
     imports += `import { shallow, mount } from 'enzyme';\n`;
     imports += `import Adapter from 'enzyme-adapter-react-16';\n`;
     imports += `import { configure } from 'enzyme';\n`;
-    imports += `\n// Configure Enzyme adapter\nconfigure({ adapter: new Adapter() });\n\n`;
+    // Store Enzyme configuration separately to add after all imports
+    setupCode = `\n// Configure Enzyme adapter\nconfigure({ adapter: new Adapter() });\n`;
   }
-
-  // Always add React import for JSX
-  imports += `import React from 'react';\n`;
 
   // Collect all imports needed
   const componentImports = new Set<string>();
@@ -1001,7 +1004,7 @@ function generateCombinedTestContent(testResults: Array<{name: string, content: 
       return lines.slice(firstDescribeIndex).join('\n');
     }).join('\n');
 
-  return `${imports}\n${testSuites}`;
+  return `${imports}${setupCode}\n${testSuites}`;
 }
 
 async function createTestFiles(testResults: Array<{name: string, content: string, isReactComponent: boolean, exportType?: 'default' | 'named'}>, sourceUri: vscode.Uri): Promise<vscode.Uri[]> {

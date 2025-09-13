@@ -113,8 +113,25 @@ Object.defineProperty(navigator, 'clipboard', {
 });
 
 // Mock Material-UI theme and styles (conditional based on available packages)
+let materialUIVersion = null;
+
 try {
-  require('@mui/material/styles');
+  // Try modern @mui/material first
+  require.resolve('@mui/material/styles');
+  materialUIVersion = 'mui';
+} catch (error) {
+  try {
+    // Try legacy @material-ui/core
+    require.resolve('@material-ui/core/styles');
+    materialUIVersion = 'material-ui';
+  } catch (error2) {
+    // Neither available
+    materialUIVersion = null;
+  }
+}
+
+if (materialUIVersion === 'mui') {
+  // Mock modern @mui/material
   jest.mock('@mui/material/styles', () => ({
     ...jest.requireActual('@mui/material/styles'),
     createTheme: jest.fn(() => ({
@@ -263,111 +280,111 @@ try {
     TabList: ({ children, ...props }) => <div {...props}>{children}</div>,
     TabPanel: ({ children, ...props }) => <div {...props}>{children}</div>,
   }));
-} catch (error) {
-  // @mui/material not available, try @material-ui/core
-  try {
-    require('@material-ui/core/styles');
-    jest.mock('@material-ui/core/styles', () => ({
-      ...jest.requireActual('@material-ui/core/styles'),
-      createTheme: jest.fn(() => ({})),
-      ThemeProvider: ({ children }) => children,
-      withStyles: jest.fn(() => (Component) => Component),
-      makeStyles: jest.fn(() => () => ({})),
-    }));
+} else if (materialUIVersion === 'material-ui') {
+  // Mock legacy @material-ui/core
+  jest.mock('@material-ui/core/styles', () => ({
+    ...jest.requireActual('@material-ui/core/styles'),
+    createTheme: jest.fn(() => ({
+      palette: { primary: { main: '#000' }, secondary: { main: '#000' } },
+      breakpoints: { up: jest.fn(() => '@media (min-width:0px)') }
+    })),
+    ThemeProvider: ({ children }) => children,
+    withStyles: jest.fn(() => (Component) => Component),
+    makeStyles: jest.fn(() => () => ({})),
+  }));
 
-    jest.mock('@material-ui/core', () => ({
-      ...jest.requireActual('@material-ui/core'),
-      ThemeProvider: ({ children }) => children,
-      CssBaseline: () => null,
-      // Add common Material-UI components as mocks
-      Button: ({ children, ...props }) => <button {...props}>{children}</button>,
-      IconButton: ({ children, ...props }) => <button {...props}>{children}</button>,
-      TextField: ({ children, ...props }) => <input {...props}>{children}</input>,
-      Paper: ({ children, ...props }) => <div {...props}>{children}</div>,
-      Typography: ({ children, ...props }) => <span {...props}>{children}</span>,
-      Box: ({ children, ...props }) => <div {...props}>{children}</div>,
-      Container: ({ children, ...props }) => <div {...props}>{children}</div>,
-      Grid: ({ children, ...props }) => <div {...props}>{children}</div>,
-      Accordion: ({ children, expanded, ...props }) => <div {...props}>{children}</div>,
-      AccordionSummary: ({ children, expandIcon, ...props }) => (
-        <div role="button" {...props}>
-          {children}
-          {expandIcon && <span>{expandIcon}</span>}
-        </div>
-      ),
-      AccordionDetails: ({ children, ...props }) => <div {...props}>{children}</div>,
-      Card: ({ children, ...props }) => <div {...props}>{children}</div>,
-      CardContent: ({ children, ...props }) => <div {...props}>{children}</div>,
-      CardHeader: ({ children, ...props }) => <div {...props}>{children}</div>,
-      Divider: ({ children, ...props }) => <hr {...props}>{children}</hr>,
-      Chip: ({ children, ...props }) => <span {...props}>{children}</span>,
-    }));
+  jest.mock('@material-ui/core', () => ({
+    ...jest.requireActual('@material-ui/core'),
+    ThemeProvider: ({ children }) => children,
+    CssBaseline: () => null,
+    // Add common Material-UI components as mocks
+    Button: ({ children, ...props }) => <button {...props}>{children}</button>,
+    IconButton: ({ children, ...props }) => <button {...props}>{children}</button>,
+    TextField: ({ children, ...props }) => <input {...props}>{children}</input>,
+    Paper: ({ children, ...props }) => <div {...props}>{children}</div>,
+    Typography: ({ children, ...props }) => <span {...props}>{children}</span>,
+    Box: ({ children, ...props }) => <div {...props}>{children}</div>,
+    Container: ({ children, ...props }) => <div {...props}>{children}</div>,
+    Grid: ({ children, ...props }) => <div {...props}>{children}</div>,
+    Accordion: ({ children, expanded, ...props }) => <div {...props}>{children}</div>,
+    AccordionSummary: ({ children, expandIcon, ...props }) => (
+      <div role="button" {...props}>
+        {children}
+        {expandIcon && <span>{expandIcon}</span>}
+      </div>
+    ),
+    AccordionDetails: ({ children, ...props }) => <div {...props}>{children}</div>,
+    Card: ({ children, ...props }) => <div {...props}>{children}</div>,
+    CardContent: ({ children, ...props }) => <div {...props}>{children}</div>,
+    CardHeader: ({ children, ...props }) => <div {...props}>{children}</div>,
+    Divider: ({ children, ...props }) => <hr {...props}>{children}</hr>,
+    Chip: ({ children, ...props }) => <span {...props}>{children}</span>,
+  }));
 
-    // Mock Material-UI icons
-    jest.mock('@material-ui/icons', () => ({
-      __esModule: true,
-      default: 'MockedIcon',
-      // Add common icons as mocks
-      Add: 'MockedIcon',
-      Edit: 'MockedIcon',
-      Delete: 'MockedIcon',
-      Search: 'MockedIcon',
-      ExpandMore: 'MockedIcon',
-      Refresh: 'MockedIcon',
-      Functions: 'MockedIcon',
-      Code: 'MockedIcon',
-      PlayArrow: 'MockedIcon',
-      ImportExport: 'MockedIcon',
-    }));
+  // Mock Material-UI icons
+  jest.mock('@material-ui/icons', () => ({
+    __esModule: true,
+    default: 'MockedIcon',
+    // Add common icons as mocks
+    Add: 'MockedIcon',
+    Edit: 'MockedIcon',
+    Delete: 'MockedIcon',
+    Search: 'MockedIcon',
+    ExpandMore: 'MockedIcon',
+    Refresh: 'MockedIcon',
+    Functions: 'MockedIcon',
+    Code: 'MockedIcon',
+    PlayArrow: 'MockedIcon',
+    ImportExport: 'MockedIcon',
+  }));
 
-    // Mock Material-UI Lab components
-    jest.mock('@material-ui/lab', () => ({
-      ...jest.requireActual('@material-ui/lab'),
-      Alert: ({ children, ...props }) => <div role="alert" {...props}>{children}</div>,
-      Autocomplete: ({ children, options, value, onChange, label, placeholder, renderInput,
-        // Filter out Material-UI specific props that shouldn't go to DOM
-        InputProps, inputProps, freeSolo, selectOnFocus, clearOnBlur, handleHomeEndKeys,
-        renderOption, filterOptions, getOptionLabel, onInputChange, inputValue, ...domProps }) => {
-        // If renderInput is provided, use it to render the input
-        if (renderInput) {
-          const inputElement = renderInput({
-            InputProps: InputProps || {},
-            inputProps: {
-              'aria-label': label,
-              placeholder: placeholder,
-              value: inputValue || value || '',
-              ...inputProps,
-            },
-          });
+  // Mock Material-UI Lab components
+  jest.mock('@material-ui/lab', () => ({
+    ...jest.requireActual('@material-ui/lab'),
+    Alert: ({ children, ...props }) => <div role="alert" {...props}>{children}</div>,
+    Autocomplete: ({ children, options, value, onChange, label, placeholder, renderInput,
+      // Filter out Material-UI specific props that shouldn't go to DOM
+      InputProps, inputProps, freeSolo, selectOnFocus, clearOnBlur, handleHomeEndKeys,
+      renderOption, filterOptions, getOptionLabel, onInputChange, inputValue, ...domProps }) => {
+      // If renderInput is provided, use it to render the input
+      if (renderInput) {
+        const inputElement = renderInput({
+          InputProps: InputProps || {},
+          inputProps: {
+            'aria-label': label,
+            placeholder: placeholder,
+            value: inputValue || value || '',
+            ...inputProps,
+          },
+        });
 
-          return (
-            <div role="combobox" aria-expanded="false" {...domProps}>
-              {inputElement}
-              {children}
-            </div>
-          );
-        }
-
-        // Default simple mock with proper accessibility
         return (
-          <div role="combobox" aria-label={label} {...domProps}>
-            <input
-              type="text"
-              placeholder={placeholder}
-              value={inputValue || value || ''}
-              aria-label={label}
-              role="textbox"
-            />
+          <div role="combobox" aria-expanded="false" {...domProps}>
+            {inputElement}
             {children}
           </div>
         );
-      },
-      Skeleton: ({ children, ...props }) => <div role="progressbar" {...props}>{children}</div>,
-    }));
-  } catch (error2) {
-    // Neither @mui/material nor @material-ui/core available, skip Material-UI mocking
-    console.log('Material-UI packages not found, skipping Material-UI mocks');
-  }
+      }
+
+      // Default simple mock with proper accessibility
+      return (
+        <div role="combobox" aria-label={label} {...domProps}>
+          <input
+            type="text"
+            placeholder={placeholder}
+            value={inputValue || value || ''}
+            aria-label={label}
+            role="textbox"
+          />
+          {children}
+        </div>
+      );
+    },
+    Skeleton: ({ children, ...props }) => <div role="progressbar" {...props}>{children}</div>,
+  }));
+} else {
+  // Neither Material-UI version available, skip mocking
+  console.log('Material-UI packages not found, skipping Material-UI mocks');
 }
 
 // Conditionally mock React Router if available

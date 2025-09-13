@@ -11,6 +11,15 @@ gulpfile.ts
 **/*.map
 **/*.tsbuildinfo
 node_modules/**
+!node_modules/@babel/**
+!node_modules/fast-glob/**
+!node_modules/debug/**
+!node_modules/@jridgewell/**
+!node_modules/jsesc/**
+!node_modules/js-tokens/**
+!node_modules/picocolors/**
+!node_modules/yallist/**
+!node_modules/ms/**
 .vscode-test-web/**
 **/.vscode/test.js
 **/.vscode-test/**

@@ -239,11 +239,11 @@ npm run compile
 vsce package
 ```
 
-This creates a `.vsix` file in your project root (e.g., `react-jest-test-generator-1.0.0.vsix`)
+This creates a `.vsix` file in your project root (e.g., `react-jest-test-generator-0.0.1.vsix`)
 
 ### 4.3 Test the Package Locally (Optional)
 ```bash
-code --install-extension react-jest-test-generator-1.0.0.vsix
+code --install-extension react-jest-test-generator-0.0.1.vsix
 ```
 
 ## Step 5: Publish to Marketplace

@@ -1,5 +1,0 @@
-// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
-
-exports[`AnotherComponent matches snapshot 1`] = `ShallowWrapper {}`;
-
-exports[`SimpleComponent matches snapshot 1`] = `ShallowWrapper {}`;

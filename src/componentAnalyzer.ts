@@ -1,9 +1,20 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parse, ParserOptions } from '@babel/parser';
-import traverse, { NodePath } from '@babel/traverse';
-import * as t from '@babel/types';
+
+// Dynamic imports for Babel dependencies with fallback
+let parser: any = null;
+let traverse: any = null;
+let types: any = null;
+
+try {
+  parser = require('@babel/parser');
+  const traverseModule = require('@babel/traverse');
+  traverse = traverseModule.default || traverseModule;
+  types = require('@babel/types');
+} catch (error) {
+  console.warn('Babel dependencies not available:', error);
+}
 
 export interface ComponentInfo {
   name: string;
@@ -84,10 +95,15 @@ export class ComponentAnalyzer {
   /**
    * Parses a file using Babel parser with appropriate options
    */
-  private static parseFile(content: string, filePath: string): t.File | null {
+  private static parseFile(content: string, filePath: string): any {
+    if (!parser) {
+      console.warn('Babel parser not available');
+      return null;
+    }
+
     const isTypeScript = filePath.endsWith('.ts') || filePath.endsWith('.tsx');
 
-    const parserOptions: ParserOptions = {
+    const parserOptions: any = {
       sourceType: 'module',
       plugins: [
         'jsx' as const,
@@ -105,7 +121,7 @@ export class ComponentAnalyzer {
     };
 
     try {
-      return parse(content, parserOptions);
+      return parser.parse(content, parserOptions);
     } catch (error) {
       console.error('Failed to parse file:', error);
       return null;
@@ -115,7 +131,12 @@ export class ComponentAnalyzer {
   /**
    * Extracts all components and functions from the AST
    */
-  private static extractAllComponentsAndFunctions(ast: t.File, filePath: string): AnalysisResult {
+  private static extractAllComponentsAndFunctions(ast: any, filePath: string): AnalysisResult {
+    if (!traverse || !types) {
+      console.warn('Babel traverse or types not available');
+      return { components: [], functions: [] };
+    }
+
     const components: ComponentInfo[] = [];
     const functions: ComponentInfo[] = [];
     let mainExport: ComponentInfo | undefined;
@@ -125,11 +146,11 @@ export class ComponentAnalyzer {
 
     traverse(ast, {
       // Handle default exports
-      ExportDefaultDeclaration: (path: NodePath<t.ExportDefaultDeclaration>) => {
+      ExportDefaultDeclaration: (path: any) => {
         const { declaration } = path.node;
         const lineNumber = path.node.loc?.start.line;
 
-        if (t.isFunctionDeclaration(declaration) && declaration.id) {
+        if (types.isFunctionDeclaration(declaration) && declaration.id) {
           const componentName = declaration.id.name;
           if (processedDeclarations.has(componentName)) return;
 
@@ -154,7 +175,7 @@ export class ComponentAnalyzer {
             this.logComponentInfo(info, 'function');
           }
           mainExport = info;
-        } else if (t.isArrowFunctionExpression(declaration) || t.isFunctionExpression(declaration)) {
+        } else if (types.isArrowFunctionExpression(declaration) || types.isFunctionExpression(declaration)) {
           const componentName = this.getFileNameFromPath(filePath);
           if (processedDeclarations.has(componentName)) return;
 
@@ -165,7 +186,7 @@ export class ComponentAnalyzer {
             filePath,
             isReactComponent: isReact,
             isFunction: !isReact,
-            props: this.extractFunctionParams((declaration as t.ArrowFunctionExpression | t.FunctionExpression).params || []),
+            props: this.extractFunctionParams((declaration as any).params || []),
             hasDefaultProps: false,
             lineNumber
           };
@@ -177,7 +198,7 @@ export class ComponentAnalyzer {
             functions.push(info);
           }
           mainExport = info;
-        } else if (t.isIdentifier(declaration)) {
+        } else if (types.isIdentifier(declaration)) {
           const componentName = declaration.name;
           if (processedDeclarations.has(componentName)) return;
 
@@ -195,7 +216,7 @@ export class ComponentAnalyzer {
           processedDeclarations.add(componentName);
           components.push(info);
           mainExport = info;
-        } else if (t.isClassDeclaration(declaration) && declaration.id) {
+        } else if (types.isClassDeclaration(declaration) && declaration.id) {
           const componentName = declaration.id.name;
           if (processedDeclarations.has(componentName)) return;
 
@@ -217,11 +238,11 @@ export class ComponentAnalyzer {
       },
 
       // Handle named exports
-      ExportNamedDeclaration: (path: NodePath<t.ExportNamedDeclaration>) => {
+      ExportNamedDeclaration: (path: any) => {
         const { declaration } = path.node;
         const lineNumber = path.node.loc?.start.line;
 
-        if (t.isFunctionDeclaration(declaration) && declaration.id) {
+        if (types.isFunctionDeclaration(declaration) && declaration.id) {
           const functionName = declaration.id.name;
           if (processedDeclarations.has(functionName)) return;
 
@@ -245,9 +266,9 @@ export class ComponentAnalyzer {
             functions.push(info);
             this.logComponentInfo(info, 'function');
           }
-        } else if (t.isVariableDeclaration(declaration)) {
+        } else if (types.isVariableDeclaration(declaration)) {
           for (const declarator of declaration.declarations) {
-            if (t.isVariableDeclarator(declarator) && t.isIdentifier(declarator.id)) {
+            if (types.isVariableDeclarator(declarator) && types.isIdentifier(declarator.id)) {
               const varName = declarator.id.name;
               if (processedDeclarations.has(varName)) continue;
 
@@ -265,7 +286,7 @@ export class ComponentAnalyzer {
 
                 processedDeclarations.add(varName);
                 components.push(info);
-              } else if (declarator.init && t.isArrowFunctionExpression(declarator.init)) {
+              } else if (declarator.init && types.isArrowFunctionExpression(declarator.init)) {
                 const isReact = this.containsJSX(declarator.init.body);
                 const info: ComponentInfo = {
                   name: varName,
@@ -287,7 +308,7 @@ export class ComponentAnalyzer {
               }
             }
           }
-        } else if (t.isClassDeclaration(declaration) && declaration.id) {
+        } else if (types.isClassDeclaration(declaration) && declaration.id) {
           const className = declaration.id.name;
           if (processedDeclarations.has(className)) return;
 
@@ -308,7 +329,7 @@ export class ComponentAnalyzer {
       },
 
       // Handle function declarations that might be components
-      FunctionDeclaration: (path: NodePath<t.FunctionDeclaration>) => {
+      FunctionDeclaration: (path: any) => {
         if (path.node.id) {
           const functionName = path.node.id.name;
           if (processedDeclarations.has(functionName)) return;
@@ -318,9 +339,9 @@ export class ComponentAnalyzer {
 
           // Check if this function is assigned to a variable or exported elsewhere
           const binding = path.scope.getBinding(functionName);
-          const isExported = binding?.referencePaths.some(refPath =>
-            refPath.parent && (t.isExportDefaultDeclaration(refPath.parent) ||
-                             t.isExportNamedDeclaration(refPath.parent))
+          const isExported = binding?.referencePaths.some((refPath: any) =>
+            refPath.parent && (types.isExportDefaultDeclaration(refPath.parent) ||
+                             types.isExportNamedDeclaration(refPath.parent))
           );
 
           if (!isExported) {
@@ -346,9 +367,9 @@ export class ComponentAnalyzer {
       },
 
       // Handle variable declarations that might be components or functions
-      VariableDeclaration: (path: NodePath<t.VariableDeclaration>) => {
+      VariableDeclaration: (path: any) => {
         for (const declarator of path.node.declarations) {
-          if (t.isVariableDeclarator(declarator) && t.isIdentifier(declarator.id)) {
+          if (types.isVariableDeclarator(declarator) && types.isIdentifier(declarator.id)) {
             const varName = declarator.id.name;
             if (processedDeclarations.has(varName)) continue;
 
@@ -356,7 +377,7 @@ export class ComponentAnalyzer {
 
             if (declarator.init) {
               // Check for arrow functions first, as they are the most common pattern
-              if (t.isArrowFunctionExpression(declarator.init) || t.isFunctionExpression(declarator.init)) {
+              if (types.isArrowFunctionExpression(declarator.init) || types.isFunctionExpression(declarator.init)) {
                 const isReact = this.containsJSX(declarator.init.body);
                 const info: ComponentInfo = {
                   name: varName,
@@ -432,7 +453,7 @@ export class ComponentAnalyzer {
   /**
    * Checks if a function declaration is a React component
    */
-  private static isReactComponentFunction(funcDecl: t.FunctionDeclaration): boolean {
+  private static isReactComponentFunction(funcDecl: any): boolean {
     // Check function body for JSX
     return this.containsJSX(funcDecl.body);
   }
@@ -440,28 +461,28 @@ export class ComponentAnalyzer {
   /**
    * Extracts function parameters as potential props
    */
-  private static extractFunctionParams(params: t.Function['params']): string[] {
+  private static extractFunctionParams(params: any): string[] {
     const extractedProps: string[] = [];
 
-    params.forEach(param => {
-      if (t.isIdentifier(param)) {
+    params.forEach((param: any) => {
+      if (types.isIdentifier(param)) {
         extractedProps.push(param.name);
-      } else if (t.isObjectPattern(param)) {
+      } else if (types.isObjectPattern(param)) {
         // Handle destructured parameters like { node, onChange, label }
-        param.properties.forEach(prop => {
-          if (t.isObjectProperty(prop) && t.isIdentifier(prop.key)) {
+        param.properties.forEach((prop: any) => {
+          if (types.isObjectProperty(prop) && types.isIdentifier(prop.key)) {
             extractedProps.push(prop.key.name);
-          } else if (t.isRestElement(prop) && t.isIdentifier(prop.argument)) {
+          } else if (types.isRestElement(prop) && types.isIdentifier(prop.argument)) {
             // Handle rest parameters like ...rest
             extractedProps.push(prop.argument.name);
           }
         });
-      } else if (t.isRestElement(param) && t.isIdentifier(param.argument)) {
+      } else if (types.isRestElement(param) && types.isIdentifier(param.argument)) {
         // Handle rest parameters like ...args
         extractedProps.push(param.argument.name);
-      } else if (t.isAssignmentPattern(param)) {
+      } else if (types.isAssignmentPattern(param)) {
         // Handle default parameters like param = defaultValue
-        if (t.isIdentifier(param.left)) {
+        if (types.isIdentifier(param.left)) {
           extractedProps.push(param.left.name);
         }
       }
@@ -482,21 +503,21 @@ export class ComponentAnalyzer {
   /**
    * Checks if an expression looks like a React component
    */
-  private static isReactComponentExpression(expression: t.Expression): boolean {
+  private static isReactComponentExpression(expression: any): boolean {
     try {
-      if (t.isArrowFunctionExpression(expression) || t.isFunctionExpression(expression)) {
+      if (types.isArrowFunctionExpression(expression) || types.isFunctionExpression(expression)) {
         // Check if the function body contains JSX
         return this.containsJSX(expression.body);
-      } else if (t.isCallExpression(expression)) {
+      } else if (types.isCallExpression(expression)) {
         // Check for React.memo, React.forwardRef, etc.
         const callee = expression.callee;
-        if (t.isMemberExpression(callee) && t.isIdentifier(callee.object) && callee.object.name === 'React') {
-          if (t.isIdentifier(callee.property)) {
+        if (types.isMemberExpression(callee) && types.isIdentifier(callee.object) && callee.object.name === 'React') {
+          if (types.isIdentifier(callee.property)) {
             const method = callee.property.name;
             return ['memo', 'forwardRef', 'lazy'].includes(method);
           }
         }
-      } else if (t.isClassExpression(expression)) {
+      } else if (types.isClassExpression(expression)) {
         return true; // Class expressions are likely components
       }
       return false;
@@ -509,14 +530,14 @@ export class ComponentAnalyzer {
   /**
    * Checks if a node contains JSX
    */
-  private static containsJSX(node: t.Node): boolean {
+  private static containsJSX(node: any): boolean {
     let hasJSX = false;
 
     // Simple recursive check for JSX without using traverse
-    const checkNode = (n: t.Node): void => {
+    const checkNode = (n: any): void => {
       if (hasJSX) return; // Early exit if already found
 
-      if (t.isJSXElement(n) || t.isJSXFragment(n)) {
+      if (types.isJSXElement(n) || types.isJSXFragment(n)) {
         hasJSX = true;
         return;
       }
@@ -527,12 +548,12 @@ export class ComponentAnalyzer {
         if (Array.isArray(value)) {
           for (const item of value) {
             if (item && typeof item === 'object' && 'type' in item) {
-              checkNode(item as t.Node);
+              checkNode(item as any);
               if (hasJSX) return;
             }
           }
         } else if (value && typeof value === 'object' && 'type' in value) {
-          checkNode(value as t.Node);
+          checkNode(value as any);
           if (hasJSX) return;
         }
       }
@@ -545,7 +566,7 @@ export class ComponentAnalyzer {
   /**
    * Checks if the file content looks like a React component
    */
-  private static isReactComponent(_content: string, ast: t.File): boolean {
+  private static isReactComponent(_content: string, ast: any): boolean {
     // Check for React patterns in content
     if (this.REACT_COMPONENT_PATTERNS.some(pattern => pattern.test(_content))) {
       return true;

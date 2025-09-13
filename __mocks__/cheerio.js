@@ -67,4 +67,6 @@ const cheerioMock = {
   prototype: createCheerioElement()
 };
 
+// Export both CommonJS and ES module formats for compatibility
 module.exports = cheerioMock;
+export default cheerioMock;
