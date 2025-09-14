@@ -54,25 +54,33 @@ export class ComponentAnalyzer {
 
       console.log(`🔍 Analyzing file: ${filePath}`);
 
-      // Parse the file using Babel parser
-      const ast = this.parseFile(content, filePath);
-
-      if (!ast) {
-        console.warn(`Failed to parse file: ${filePath}`);
-        return { components: [], functions: [] };
+      // Try AST parsing first
+      if (parser && traverse && types) {
+        try {
+          const ast = this.parseFile(content, filePath);
+          if (ast) {
+            const result = this.extractAllComponentsAndFunctions(ast, filePath);
+            if (result.components.length > 0 || result.functions.length > 0) {
+              console.log(`✅ AST Analysis successful: ${result.components.length} components, ${result.functions.length} functions`);
+              return result;
+            }
+          }
+        } catch (astError) {
+          console.warn('AST parsing failed, falling back to regex:', astError);
+        }
       }
 
-      // Extract all component and function information
-      const result = this.extractAllComponentsAndFunctions(ast, filePath);
+      // Fallback to regex-based analysis
+      console.log('📝 Using fallback regex analysis...');
+      const fallbackResult = this.analyzeFallback(content, filePath);
+      console.log(`📊 Fallback result: ${fallbackResult.components.length} components, ${fallbackResult.functions.length} functions`);
+      
+      return fallbackResult;
 
-      console.log(`📊 Analysis result: ${result.components.length} components, ${result.functions.length} functions`);
-      console.log('Components found:', result.components.map(c => `${c.name} (${c.exportType})`));
-      console.log('Functions found:', result.functions.map(f => `${f.name} (${f.exportType})`));
-
-      return result;
     } catch (error) {
       console.error('Error analyzing component file:', error);
-      // Return a fallback based on filename
+      
+      // Final fallback based on filename
       const filePath = uri.fsPath;
       const fileName = path.basename(filePath, path.extname(filePath));
       const fallbackComponent: ComponentInfo = {
@@ -84,12 +92,222 @@ export class ComponentAnalyzer {
         props: [],
         hasDefaultProps: false
       };
+      
+      console.log(`🚨 Using filename fallback: ${fileName}`);
       return {
         components: [fallbackComponent],
         functions: [],
         mainExport: fallbackComponent
       };
     }
+  }
+
+  /**
+   * Fallback analysis using regex patterns when AST parsing fails
+   */
+  private static analyzeFallback(content: string, filePath: string): AnalysisResult {
+    const components: ComponentInfo[] = [];
+    const functions: ComponentInfo[] = [];
+    let mainExport: ComponentInfo | undefined;
+
+    // Look for exports first
+    const defaultExportMatch = content.match(/export\s+default\s+(\w+)/);
+    const namedExportMatches = content.matchAll(/export\s+(?:const|function|class)\s+(\w+)/g);
+    const exportListMatch = content.match(/export\s*\{\s*([^}]+)\s*\}/);
+    
+    // Look for Redux connect pattern
+    const connectExportMatch = content.match(/export\s+default\s+connect\([^)]*\)\((\w+)\)/);
+    
+    // Look for other HOC patterns
+    const hocPatterns = [
+      /export\s+default\s+(?:withRouter|memo|forwardRef|lazy)\((\w+)\)/,
+      /export\s+default\s+(\w+)\s*\([^)]*\)\s*\((\w+)\)/
+    ];
+
+    const exportedNames = new Set<string>();
+    let defaultExportName: string | null = null;
+
+    // Handle Redux connect pattern specifically
+    if (connectExportMatch && connectExportMatch[1]) {
+      defaultExportName = connectExportMatch[1];
+      exportedNames.add(defaultExportName);
+      console.log(`🔗 Detected Redux connect pattern: ${defaultExportName}`);
+    }
+    // Handle other HOC patterns
+    else {
+      for (const pattern of hocPatterns) {
+        const match = content.match(pattern);
+        if (match) {
+          // For patterns with two groups, use the second one (the wrapped component)
+          const componentName = match[2] || match[1];
+          if (componentName) {
+            defaultExportName = componentName;
+            exportedNames.add(defaultExportName);
+            console.log(`🔗 Detected HOC pattern: ${componentName}`);
+            break;
+          }
+        }
+      }
+    }
+
+    // Collect default export (if not already handled by HOC patterns)
+    if (!defaultExportName && defaultExportMatch && defaultExportMatch[1]) {
+      defaultExportName = defaultExportMatch[1];
+      exportedNames.add(defaultExportName);
+    }
+
+    // Collect named exports
+    for (const match of namedExportMatches) {
+      if (match[1]) {
+        exportedNames.add(match[1]);
+      }
+    }
+
+    // Collect export list
+    if (exportListMatch && exportListMatch[1]) {
+      const exportList = exportListMatch[1].split(',').map(name => name.trim());
+      exportList.forEach(name => exportedNames.add(name));
+    }
+
+    console.log('🔍 Fallback Export Analysis:');
+    console.log('  - Default export:', defaultExportName);
+    console.log('  - All exports:', Array.from(exportedNames));
+
+    // Look for React components and functions
+    const componentPatterns = [
+      /(?:function|const)\s+(\w+)\s*(?:\([^)]*\))?\s*(?:=>)?\s*\{[^}]*(?:return\s*\(?\s*<|jsx)/i,
+      /class\s+(\w+)\s+extends\s+(?:React\.)?(?:Component|PureComponent)/i,
+      /const\s+(\w+)\s*=\s*(?:React\.)?(?:memo|forwardRef|lazy)/i
+    ];
+
+    // Find React components
+    for (const pattern of componentPatterns) {
+      const matches = content.matchAll(new RegExp(pattern.source, 'gi'));
+      for (const match of matches) {
+        const name = match[1];
+        if (name && exportedNames.has(name)) {
+          const isDefault = name === defaultExportName;
+          const info: ComponentInfo = {
+            name,
+            exportType: isDefault ? 'default' : 'named',
+            filePath,
+            isReactComponent: true,
+            isFunction: false,
+            props: this.extractPropsFromContent(content, name),
+            hasDefaultProps: false
+          };
+          
+          components.push(info);
+          if (isDefault) mainExport = info;
+          console.log(`  ✅ Found component: ${name} (${info.exportType})`);
+        }
+      }
+    }
+
+    // If no components found but we have exports, try a more permissive approach
+    if (components.length === 0 && exportedNames.size > 0) {
+      // Check if any exported function contains JSX-like patterns
+      for (const exportName of exportedNames) {
+        const functionRegex = new RegExp(`(?:function|const)\\s+${exportName}[\\s\\S]*?(?:return[\\s\\S]*?<|jsx|React\\.createElement)`, 'i');
+        if (functionRegex.test(content)) {
+          const isDefault = exportName === defaultExportName;
+          const info: ComponentInfo = {
+            name: exportName,
+            exportType: isDefault ? 'default' : 'named',
+            filePath,
+            isReactComponent: true,
+            isFunction: false,
+            props: this.extractPropsFromContent(content, exportName),
+            hasDefaultProps: false
+          };
+          
+          components.push(info);
+          if (isDefault) mainExport = info;
+          console.log(`  ✅ Found component (permissive): ${exportName} (${info.exportType})`);
+        }
+      }
+    }
+
+    // If still no components found, use filename as fallback for default export
+    if (components.length === 0 && (defaultExportName || exportedNames.size === 0)) {
+      const fileName = this.getFileNameFromPath(filePath);
+      const name = defaultExportName || fileName;
+      const info: ComponentInfo = {
+        name,
+        exportType: 'default',
+        filePath,
+        isReactComponent: true,
+        isFunction: false,
+        props: [],
+        hasDefaultProps: false
+      };
+      
+      components.push(info);
+      mainExport = info;
+      console.log(`  🔄 Using fallback component: ${name}`);
+    }
+
+    return {
+      components,
+      functions,
+      mainExport
+    };
+  }
+
+  /**
+   * Extract component name from Higher-Order Component patterns
+   */
+  private static extractComponentFromHOC(callExpression: any): string | null {
+    if (!types) return null;
+
+    // Handle connect(mapStateToProps, mapDispatchToProps)(ComponentName)
+    if (types.isCallExpression(callExpression) && 
+        types.isCallExpression(callExpression.callee) &&
+        types.isIdentifier(callExpression.callee.callee) &&
+        callExpression.callee.callee.name === 'connect') {
+      
+      const argument = callExpression.arguments[0];
+      if (types.isIdentifier(argument)) {
+        return argument.name;
+      }
+    }
+
+    // Handle other HOCs like withRouter(ComponentName), memo(ComponentName)
+    if (types.isCallExpression(callExpression) && 
+        types.isIdentifier(callExpression.callee)) {
+      
+      const hocNames = ['withRouter', 'memo', 'forwardRef', 'lazy'];
+      if (hocNames.includes(callExpression.callee.name)) {
+        const argument = callExpression.arguments[0];
+        if (types.isIdentifier(argument)) {
+          return argument.name;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract props from content using regex
+   */
+  private static extractPropsFromContent(content: string, componentName: string): string[] {
+    const props: string[] = [];
+    
+    // Look for destructured props in function parameters
+    const destructureRegex = new RegExp(`(?:function|const)\\s+${componentName}\\s*\\(\\s*\\{\\s*([^}]+)\\s*\\}`, 'i');
+    const destructureMatch = content.match(destructureRegex);
+    
+    if (destructureMatch && destructureMatch[1]) {
+      const propsString = destructureMatch[1];
+      const propNames = propsString.split(',').map(prop => {
+        const parts = prop.trim().split(':');
+        return parts[0]?.trim() || '';
+      }).filter(name => name.length > 0);
+      props.push(...propNames);
+    }
+    
+    return props;
   }
 
   /**
@@ -163,6 +381,14 @@ export class ComponentAnalyzer {
           const fileName = this.getFileNameFromPath(filePath);
           defaultExportName.add(fileName);
           exportedNames.add(fileName);
+        } else if (types.isCallExpression(declaration)) {
+          // Handle HOCs like connect()(ComponentName) or withRouter(ComponentName)
+          const hocComponent = this.extractComponentFromHOC(declaration);
+          if (hocComponent) {
+            defaultExportName.add(hocComponent);
+            exportedNames.add(hocComponent);
+            console.log(`🔗 Found HOC pattern in AST: ${hocComponent}`);
+          }
         }
       },
       

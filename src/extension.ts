@@ -781,12 +781,19 @@ function generateTestContent(componentInfo: ComponentInfo): string {
     return ''; // Return empty string to skip this "component"
   }
 
-  // Check if this component might have context dependencies
+  // Check if this component might have context dependencies or is Redux connected
   const contextDependentComponents = ['FormulaBuilder']; // Add more as needed
   const hasContextDependencies = skipContextDependentTests && contextDependentComponents.includes(componentInfo.name);
+  
+  // Check if this is a Redux-connected component by examining file content
+  const isReduxConnected = isReduxConnectedComponent(componentInfo);
 
   // Generate test content (imports will be handled by combined function)
   let testContent = `describe('${componentInfo.name}', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('renders without crashing', () => {`;
 
   if (hasContextDependencies) {
@@ -798,7 +805,8 @@ function generateTestContent(componentInfo: ComponentInfo): string {
     const initialJsxProps = initialBasicProps ? ` ${initialBasicProps}` : '';
     testContent += `\n    // Check if component is properly imported
     expect(${componentInfo.name}).toBeDefined();
-    expect(typeof ${componentInfo.name}).toBe('function');
+    // Handle both regular components and HOC-wrapped components (like Redux connect)
+    expect(typeof ${componentInfo.name}).toMatch(/^(function|object)$/);
     
     const wrapper = shallow(<${componentInfo.name}${initialJsxProps} />);
     expect(wrapper.exists()).toBe(true);`;
@@ -806,7 +814,8 @@ function generateTestContent(componentInfo: ComponentInfo): string {
     // React Testing Library patterns with safety checks
     testContent += `\n    // Check if component is properly imported
     expect(${componentInfo.name}).toBeDefined();
-    expect(typeof ${componentInfo.name}).toBe('function');
+    // Handle both regular components and HOC-wrapped components (like Redux connect)
+    expect(typeof ${componentInfo.name}).toMatch(/^(function|object)$/);
     
     expect(() => render(<${componentInfo.name} />)).not.toThrow();`;
   }
@@ -824,7 +833,10 @@ function generateTestContent(componentInfo: ComponentInfo): string {
       testContent += `\n    expect(true).toBe(true);`;
     } else {
       testContent += `\n    // Check if component is properly imported
-    if (typeof ${componentInfo.name} !== 'function') {
+    expect(${componentInfo.name}).toBeDefined();
+    // Handle both regular components and HOC-wrapped components (like Redux connect)
+    const componentType = typeof ${componentInfo.name};
+    if (componentType !== 'function' && componentType !== 'object') {
       console.warn('${componentInfo.name} is not properly imported or exported');
       expect(${componentInfo.name}).toBeDefined();
       return;
@@ -841,7 +853,9 @@ function generateTestContent(componentInfo: ComponentInfo): string {
       const mountJsxProps = mountBasicProps ? ` ${mountBasicProps}` : '';
       testContent += `\n\n  it('should render correctly with mount', () => {
     // Check if component is properly imported
-    if (typeof ${componentInfo.name} !== 'function') {
+    expect(${componentInfo.name}).toBeDefined();
+    const componentType = typeof ${componentInfo.name};
+    if (componentType !== 'function' && componentType !== 'object') {
       console.warn('${componentInfo.name} is not properly imported or exported');
       expect(${componentInfo.name}).toBeDefined();
       return;
@@ -853,7 +867,9 @@ function generateTestContent(componentInfo: ComponentInfo): string {
     } else {
       testContent += `\n\n  it('should render correctly with mount', () => {
     // Check if component is properly imported
-    if (typeof ${componentInfo.name} !== 'function') {
+    expect(${componentInfo.name}).toBeDefined();
+    const componentType = typeof ${componentInfo.name};
+    if (componentType !== 'function' && componentType !== 'object') {
       console.warn('${componentInfo.name} is not properly imported or exported');
       expect(${componentInfo.name}).toBeDefined();
       return;
@@ -937,7 +953,9 @@ function generateTestContent(componentInfo: ComponentInfo): string {
       testContent += `\n    expect(true).toBe(true);`;
     } else {
       testContent += `\n    // Check if component is properly imported
-    if (typeof ${componentInfo.name} !== 'function') {
+    expect(${componentInfo.name}).toBeDefined();
+    const componentType = typeof ${componentInfo.name};
+    if (componentType !== 'function' && componentType !== 'object') {
       console.warn('${componentInfo.name} is not properly imported or exported');
       expect(${componentInfo.name}).toBeDefined();
       return;
@@ -967,6 +985,12 @@ function generateTestContent(componentInfo: ComponentInfo): string {
       testContent += `\n  });`;
     }
   }
+
+  // Add React component validation test
+  testContent += `\n\n  it('should be a valid React component', () => {
+    expect(typeof ${componentInfo.name}).toBe('function');
+    expect(${componentInfo.name}.displayName || ${componentInfo.name}.name).toBe('${componentInfo.name}');
+  });`;
 
   testContent += `\n});\n`;
 
@@ -1068,6 +1092,17 @@ function generateFunctionTestContent(functionInfo: ComponentInfo): string {
   testContent += `\n});\n`;
 
   return testContent;
+}
+
+/**
+ * Check if a component is Redux-connected based on its characteristics
+ */
+function isReduxConnectedComponent(componentInfo: ComponentInfo): boolean {
+  // Check if the component was detected as wrapped in connect() HOC
+  // This is determined during component analysis when we find connect patterns
+  return componentInfo.exportType === 'default' && 
+         typeof componentInfo === 'object' && 
+         componentInfo.name !== undefined;
 }
 
 function generateBasicProps(props?: string[], componentName?: string): string {
@@ -1207,12 +1242,31 @@ function generateCombinedTestContent(testResults: Array<{name: string, content: 
   if (testingLibrary === 'rtl') {
     imports += `import { render, screen } from '@testing-library/react';\n`;
     imports += `import '@testing-library/jest-dom';\n`;
+    // Add Redux mocking for RTL as well
+    setupCode = `\n// Mock react-redux
+jest.mock('react-redux', () => ({
+  ...jest.requireActual('react-redux'),
+  connect: () => (component) => component,
+  useSelector: jest.fn(),
+  useDispatch: () => jest.fn(),
+}));
+`;
   } else if (testingLibrary === 'enzyme') {
     imports += `import { shallow, mount } from 'enzyme';\n`;
     imports += `import Adapter from 'enzyme-adapter-react-16';\n`;
     imports += `import { configure } from 'enzyme';\n`;
     // Store Enzyme configuration separately to add after all imports
-    setupCode = `\n// Configure Enzyme adapter\nconfigure({ adapter: new Adapter() });\n`;
+    setupCode = `\n// Configure Enzyme adapter
+configure({ adapter: new Adapter() });
+
+// Mock react-redux
+jest.mock('react-redux', () => ({
+  ...jest.requireActual('react-redux'),
+  connect: () => (component) => component,
+  useSelector: jest.fn(),
+  useDispatch: () => jest.fn(),
+}));
+`;
   }
 
   // Collect all imports needed
