@@ -141,224 +141,85 @@ export class ComponentAnalyzer {
     const functions: ComponentInfo[] = [];
     let mainExport: ComponentInfo | undefined;
 
-    // Track all declarations to avoid duplicates
-    const processedDeclarations = new Set<string>();
+    // Track exports explicitly
+    const exportedNames = new Set<string>();
+    const defaultExportName = new Set<string>();
 
+    // First pass: Find all exports
     traverse(ast, {
-      // Handle default exports
       ExportDefaultDeclaration: (path: any) => {
         const { declaration } = path.node;
-        const lineNumber = path.node.loc?.start.line;
-
-        if (types.isFunctionDeclaration(declaration) && declaration.id) {
-          const componentName = declaration.id.name;
-          if (processedDeclarations.has(componentName)) return;
-
-          const isReact = this.isReactComponentFunction(declaration);
-          const info: ComponentInfo = {
-            name: componentName,
-            exportType: 'default',
-            filePath,
-            isReactComponent: isReact,
-            isFunction: !isReact,
-            props: this.extractFunctionParams(declaration.params),
-            hasDefaultProps: false,
-            lineNumber
-          };
-
-          processedDeclarations.add(componentName);
-          if (isReact) {
-            components.push(info);
-            this.logComponentInfo(info, 'component');
-          } else {
-            functions.push(info);
-            this.logComponentInfo(info, 'function');
-          }
-          mainExport = info;
+        
+        if (types.isIdentifier(declaration)) {
+          // export default ComponentName
+          defaultExportName.add(declaration.name);
+          exportedNames.add(declaration.name);
+        } else if (types.isFunctionDeclaration(declaration) && declaration.id) {
+          // export default function ComponentName() {}
+          defaultExportName.add(declaration.id.name);
+          exportedNames.add(declaration.id.name);
         } else if (types.isArrowFunctionExpression(declaration) || types.isFunctionExpression(declaration)) {
-          const componentName = this.getFileNameFromPath(filePath);
-          if (processedDeclarations.has(componentName)) return;
-
-          const isReact = this.containsJSX(declaration.body);
-          const info: ComponentInfo = {
-            name: componentName,
-            exportType: 'default',
-            filePath,
-            isReactComponent: isReact,
-            isFunction: !isReact,
-            props: this.extractFunctionParams((declaration as any).params || []),
-            hasDefaultProps: false,
-            lineNumber
-          };
-
-          processedDeclarations.add(componentName);
-          if (isReact) {
-            components.push(info);
-          } else {
-            functions.push(info);
-          }
-          mainExport = info;
-        } else if (types.isIdentifier(declaration)) {
-          const componentName = declaration.name;
-          if (processedDeclarations.has(componentName)) return;
-
-          const info: ComponentInfo = {
-            name: componentName,
-            exportType: 'default',
-            filePath,
-            isReactComponent: true, // Assume it's a component if exported as default
-            isFunction: false,
-            props: [],
-            hasDefaultProps: false,
-            lineNumber
-          };
-
-          processedDeclarations.add(componentName);
-          components.push(info);
-          mainExport = info;
-        } else if (types.isClassDeclaration(declaration) && declaration.id) {
-          const componentName = declaration.id.name;
-          if (processedDeclarations.has(componentName)) return;
-
-          const info: ComponentInfo = {
-            name: componentName,
-            exportType: 'default',
-            filePath,
-            isReactComponent: true,
-            isFunction: false,
-            props: [],
-            hasDefaultProps: false,
-            lineNumber
-          };
-
-          processedDeclarations.add(componentName);
-          components.push(info);
-          mainExport = info;
+          // export default () => {} (use filename)
+          const fileName = this.getFileNameFromPath(filePath);
+          defaultExportName.add(fileName);
+          exportedNames.add(fileName);
         }
       },
-
-      // Handle named exports
+      
       ExportNamedDeclaration: (path: any) => {
-        const { declaration } = path.node;
-        const lineNumber = path.node.loc?.start.line;
-
-        if (types.isFunctionDeclaration(declaration) && declaration.id) {
-          const functionName = declaration.id.name;
-          if (processedDeclarations.has(functionName)) return;
-
-          const isReact = this.isReactComponentFunction(declaration);
-          const info: ComponentInfo = {
-            name: functionName,
-            exportType: 'named',
-            filePath,
-            isReactComponent: isReact,
-            isFunction: !isReact,
-            props: this.extractFunctionParams(declaration.params),
-            hasDefaultProps: false,
-            lineNumber
-          };
-
-          processedDeclarations.add(functionName);
-          if (isReact) {
-            components.push(info);
-            this.logComponentInfo(info, 'component');
-          } else {
-            functions.push(info);
-            this.logComponentInfo(info, 'function');
-          }
-        } else if (types.isVariableDeclaration(declaration)) {
-          for (const declarator of declaration.declarations) {
-            if (types.isVariableDeclarator(declarator) && types.isIdentifier(declarator.id)) {
-              const varName = declarator.id.name;
-              if (processedDeclarations.has(varName)) continue;
-
-              if (declarator.init && this.isReactComponentExpression(declarator.init)) {
-                const info: ComponentInfo = {
-                  name: varName,
-                  exportType: 'named',
-                  filePath,
-                  isReactComponent: true,
-                  isFunction: false,
-                  props: this.extractPropsFromExpression(),
-                  hasDefaultProps: false,
-                  lineNumber
-                };
-
-                processedDeclarations.add(varName);
-                components.push(info);
-              } else if (declarator.init && types.isArrowFunctionExpression(declarator.init)) {
-                const isReact = this.containsJSX(declarator.init.body);
-                const info: ComponentInfo = {
-                  name: varName,
-                  exportType: 'named',
-                  filePath,
-                  isReactComponent: isReact,
-                  isFunction: !isReact,
-                  props: this.extractFunctionParams(declarator.init.params),
-                  hasDefaultProps: false,
-                  lineNumber
-                };
-
-                processedDeclarations.add(varName);
-                if (isReact) {
-                  components.push(info);
-                } else {
-                  functions.push(info);
-                }
+        const { declaration, specifiers } = path.node;
+        
+        if (declaration) {
+          if (types.isFunctionDeclaration(declaration) && declaration.id) {
+            exportedNames.add(declaration.id.name);
+          } else if (types.isVariableDeclaration(declaration)) {
+            for (const declarator of declaration.declarations) {
+              if (types.isVariableDeclarator(declarator) && types.isIdentifier(declarator.id)) {
+                exportedNames.add(declarator.id.name);
               }
             }
           }
-        } else if (types.isClassDeclaration(declaration) && declaration.id) {
-          const className = declaration.id.name;
-          if (processedDeclarations.has(className)) return;
-
-          const info: ComponentInfo = {
-            name: className,
-            exportType: 'named',
-            filePath,
-            isReactComponent: true,
-            isFunction: false,
-            props: [],
-            hasDefaultProps: false,
-            lineNumber
-          };
-
-          processedDeclarations.add(className);
-          components.push(info);
         }
-      },
+        
+        if (specifiers) {
+          for (const spec of specifiers) {
+            if (types.isExportSpecifier(spec) && types.isIdentifier(spec.exported)) {
+              exportedNames.add(spec.exported.name);
+            }
+          }
+        }
+      }
+    });
 
-      // Handle function declarations that might be components
+    console.log('🔍 Export Analysis:');
+    console.log('  - Default exports:', Array.from(defaultExportName));
+    console.log('  - All exports:', Array.from(exportedNames));
+
+    // Second pass: Find component/function definitions and match with exports
+    traverse(ast, {
       FunctionDeclaration: (path: any) => {
         if (path.node.id) {
           const functionName = path.node.id.name;
-          if (processedDeclarations.has(functionName)) return;
-
-          const lineNumber = path.node.loc?.start.line;
-          const isReact = this.isReactComponentFunction(path.node);
-
-          // Check if this function is assigned to a variable or exported elsewhere
-          const binding = path.scope.getBinding(functionName);
-          const isExported = binding?.referencePaths.some((refPath: any) =>
-            refPath.parent && (types.isExportDefaultDeclaration(refPath.parent) ||
-                             types.isExportNamedDeclaration(refPath.parent))
-          );
-
-          if (!isExported) {
+          
+          // Only include if it's exported
+          if (exportedNames.has(functionName)) {
+            const isReact = this.isReactComponentFunction(path.node);
+            const exportType = defaultExportName.has(functionName) ? 'default' : 'named';
+            
             const info: ComponentInfo = {
               name: functionName,
-              exportType: 'named', // Assume named if not explicitly exported
+              exportType,
               filePath,
               isReactComponent: isReact,
               isFunction: !isReact,
               props: this.extractFunctionParams(path.node.params),
               hasDefaultProps: false,
-              lineNumber
+              lineNumber: path.node.loc?.start.line
             };
 
-            processedDeclarations.add(functionName);
             if (isReact) {
               components.push(info);
+              if (exportType === 'default') mainExport = info;
             } else {
               functions.push(info);
             }
@@ -366,53 +227,34 @@ export class ComponentAnalyzer {
         }
       },
 
-      // Handle variable declarations that might be components or functions
       VariableDeclaration: (path: any) => {
         for (const declarator of path.node.declarations) {
           if (types.isVariableDeclarator(declarator) && types.isIdentifier(declarator.id)) {
             const varName = declarator.id.name;
-            if (processedDeclarations.has(varName)) continue;
-
-            const lineNumber = declarator.loc?.start.line;
-
-            if (declarator.init) {
-              // Check for arrow functions first, as they are the most common pattern
+            
+            // Only include if it's exported
+            if (exportedNames.has(varName) && declarator.init) {
               if (types.isArrowFunctionExpression(declarator.init) || types.isFunctionExpression(declarator.init)) {
                 const isReact = this.containsJSX(declarator.init.body);
+                const exportType = defaultExportName.has(varName) ? 'default' : 'named';
+                
                 const info: ComponentInfo = {
                   name: varName,
-                  exportType: 'named',
+                  exportType,
                   filePath,
                   isReactComponent: isReact,
                   isFunction: !isReact,
                   props: this.extractFunctionParams(declarator.init.params),
                   hasDefaultProps: false,
-                  lineNumber
+                  lineNumber: declarator.loc?.start.line
                 };
 
-                processedDeclarations.add(varName);
                 if (isReact) {
                   components.push(info);
-                  this.logComponentInfo(info, 'component');
+                  if (exportType === 'default') mainExport = info;
                 } else {
                   functions.push(info);
-                  this.logComponentInfo(info, 'function');
                 }
-              } else if (this.isReactComponentExpression(declarator.init)) {
-                const info: ComponentInfo = {
-                  name: varName,
-                  exportType: 'named',
-                  filePath,
-                  isReactComponent: true,
-                  isFunction: false,
-                  props: this.extractPropsFromExpression(),
-                  hasDefaultProps: false,
-                  lineNumber
-                };
-
-                processedDeclarations.add(varName);
-                components.push(info);
-                this.logComponentInfo(info, 'component');
               }
             }
           }
@@ -420,9 +262,9 @@ export class ComponentAnalyzer {
       }
     });
 
-    // If no components or functions found, create a fallback
-    if (components.length === 0 && functions.length === 0) {
-      const fileName = this.getFileNameFromPath(filePath);
+    // If no components found but we have default exports, create fallback
+    if (components.length === 0 && defaultExportName.size > 0) {
+      const fileName = Array.from(defaultExportName)[0] || this.getFileNameFromPath(filePath);
       const fallbackComponent: ComponentInfo = {
         name: fileName,
         exportType: 'default',
@@ -435,6 +277,11 @@ export class ComponentAnalyzer {
       components.push(fallbackComponent);
       mainExport = fallbackComponent;
     }
+
+    console.log('📊 Final Analysis Result:');
+    console.log('  - Components:', components.map(c => `${c.name} (${c.exportType})`));
+    console.log('  - Functions:', functions.map(f => `${f.name} (${f.exportType})`));
+    console.log('  - Main export:', mainExport?.name);
 
     return {
       components,

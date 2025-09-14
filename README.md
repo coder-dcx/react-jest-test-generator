@@ -496,17 +496,39 @@ describe('Counter', () => {
 **Symptoms**: Tests fail with Material-UI component errors
 **Solution**: The extension automatically detects your Material-UI version and generates appropriate mocks. Ensure you have the correct version installed.
 
+#### Issue 6: "React.jsx: type is invalid... but got: undefined"
+**Symptoms**: Component import errors in tests, "Cannot read properties of undefined (reading 'contextTypes')"
+**Solution**: This indicates component import/export mismatch. The extension now generates tests with safety checks.
+
+**Common Fixes**:
+- **Default vs Named Export**: Ensure import style matches export style
+- **File Path**: Verify the import path is correct  
+- **Multiple Components**: Import all components from files with multiple exports
+
+**Auto-Detection** (v0.0.7+): Generated tests now include checks:
+```javascript
+expect(YourComponent).toBeDefined();
+expect(typeof YourComponent).toBe('function');
+```
+
 #### Complete Jest Configuration Example
 For a comprehensive setup that resolves all common issues, see:
 - `example-jest.config.js` - Basic Jest configuration with all fixes
 - `jest-config-examples.js` - Advanced configuration with dynamic Material-UI detection
 
-### Latest Fixes (v0.0.5)
+### Latest Fixes (v0.0.7)
+- ✅ **Component Import Safety Checks**: Tests now include validation to ensure components are properly imported
+- ✅ **Better Error Detection**: Detects undefined components and provides clear error messages
+- ✅ **Defensive Test Generation**: Generated tests check component existence before attempting to render
+- ✅ **Import/Export Troubleshooting**: Enhanced guidance for resolving component import issues
+
+### Previous Fixes (v0.0.5-0.0.6)
 - ✅ **Dynamic Material-UI Version Detection**: Automatically detects Material-UI v4 vs v5 and generates appropriate mocks
 - ✅ **Import Order Fixes**: React imports always come first (ESLint import/first compliance)
 - ✅ **Node.js Module Compatibility**: Fixes `node:stream` and other Node.js built-in module errors
 - ✅ **Enhanced Cheerio Mocking**: Comprehensive cheerio mock for Enzyme compatibility
 - ✅ **Intelligent Configuration**: Generates Jest configuration based on your project's actual dependencies
+- ✅ **Interactive Troubleshooting**: Command palette integration for troubleshooting guides
 
 ## ❓ FAQ
 

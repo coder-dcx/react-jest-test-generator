@@ -22,6 +22,7 @@
     {
       "type": "npm",
       "script": "compile",
+      "label": "npm: compile",
       "group": {
         "kind": "build",
         "isDefault": true
@@ -36,6 +37,7 @@
     {
       "type": "npm",
       "script": "pretest",
+      "label": "npm: pretest",
       "group": "test",
       "presentation": {
         "panel": "shared"
